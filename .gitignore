@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# State and config files
+*.json
+ssh_state.json
+usbip_state.json
+ips.json
+
+# IDE files
+.vscode/
+.idea/

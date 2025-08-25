@@ -1,0 +1,5 @@
+PyQt6>=6.0.0
+paramiko>=2.7.0
+
+# System requirements (not installed by pip):
+# - usbip (install via your Linux package manager)
