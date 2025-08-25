@@ -43,7 +43,7 @@ usbip-gui-app
 ## Installation
 
 ```sh
-git clone https://github.com/yourusername/usbip-gui-app.git
+git clone https://github.com/cyphercolt/usbip-gui-app.git
 cd usbip-gui-app
 python3 -m venv venv
 source venv/bin/activate
