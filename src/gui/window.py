@@ -32,6 +32,46 @@ class MainWindow(QMainWindow):
                 # Only detach if checked
                 checkbox.setChecked(False)
                 # The checkbox's stateChanged signal will call toggle_attach
+
+    def unbind_all_devices(self):
+        """Unbind all bound devices on the remote SSH server and refresh tables"""
+        ip = self.ip_input.currentText()
+        username = getattr(self, "last_ssh_username", "")
+        password = getattr(self, "last_ssh_password", "")
+        accept = getattr(self, "last_ssh_accept", False)
+        
+        if not ip or not username or not password:
+            self.console.append("Missing SSH credentials for Unbind All.\n")
+            return
+            
+        try:
+            import paramiko
+            client = paramiko.SSHClient()
+            if accept:
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            else:
+                client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            client.connect(ip, username=username, password=password, timeout=10)
+            
+            # Unbind all bound devices
+            for row in range(self.remote_table.rowCount()):
+                checkbox = self.remote_table.cellWidget(row, 2)
+                busid_item = self.remote_table.item(row, 0)
+                if checkbox and checkbox.isChecked() and busid_item:
+                    busid = busid_item.text()
+                    cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
+                    stdin, stdout, stderr = client.exec_command(cmd)
+                    output = stdout.read().decode() + stderr.read().decode()
+                    self.console.append(f"SSH $ {cmd}\n{output}\n")
+            
+            client.close()
+            self.console.append("All devices unbound successfully.\n")
+            
+            # Refresh all tables to update the UI and uncheck checkboxes
+            self.refresh_all_tables()
+            
+        except Exception as e:
+            self.console.append(f"Error unbinding all devices: {e}\n")
     def __init__(self):
         super().__init__()
         self.setWindowTitle("USBIP GUI Application")
@@ -117,6 +157,18 @@ class MainWindow(QMainWindow):
         self.remote_table.setColumnCount(3)
         self.remote_table.setHorizontalHeaderLabels(["Device", "Description", "Remote Bind"])
         remote_layout.addWidget(self.remote_table)
+        
+        # Unbind All button under remote table
+        self.unbind_all_button = QPushButton("Unbind All")
+        self.unbind_all_button.clicked.connect(self.unbind_all_devices)
+        self.unbind_all_button.setVisible(False)  # Initially hidden
+        remote_btns_widget = QWidget()
+        remote_btns_layout = QHBoxLayout()
+        remote_btns_layout.addStretch()
+        remote_btns_layout.addWidget(self.unbind_all_button)
+        remote_btns_widget.setLayout(remote_btns_layout)
+        remote_layout.addWidget(remote_btns_widget)
+        
         tables_layout.addLayout(remote_layout)
 
         self.layout.addLayout(tables_layout)
@@ -460,6 +512,7 @@ class MainWindow(QMainWindow):
             self.ssh_client = client
             self.ssh_disco_button.setVisible(True)
             self.ipd_reset_button.setVisible(True)
+            self.unbind_all_button.setVisible(True)  # Show the unbind all button
             stdin, stdout, stderr = client.exec_command("usbip list -l")
             output = stdout.read().decode() + stderr.read().decode()
             self.console.append(f"SSH $ usbip list -l\n{output}\n")
@@ -481,6 +534,10 @@ class MainWindow(QMainWindow):
             client.close()
         except Exception as e:
             self.console.append(f"SSH error: {e}\n")
+            # Hide SSH buttons on error
+            self.ssh_disco_button.setVisible(False)
+            self.ipd_reset_button.setVisible(False)
+            self.unbind_all_button.setVisible(False)
 
     def toggle_bind_remote(self, ip, username, password, busid, accept_fingerprint, state):
         import paramiko
@@ -556,6 +613,7 @@ class MainWindow(QMainWindow):
         self.remote_table.setRowCount(0)
         self.ssh_disco_button.setVisible(False)
         self.ipd_reset_button.setVisible(False)
+        self.unbind_all_button.setVisible(False)  # Hide the unbind all button
         self.console.append("SSH session disconnected.\n")
 
     def reset_usbipd(self):
