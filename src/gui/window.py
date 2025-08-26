@@ -59,10 +59,13 @@ class MainWindow(QMainWindow):
                 busid_item = self.remote_table.item(row, 0)
                 if checkbox and checkbox.isChecked() and busid_item:
                     busid = busid_item.text()
-                    cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
-                    stdin, stdout, stderr = client.exec_command(cmd)
-                    output = stdout.read().decode() + stderr.read().decode()
-                    self.console.append(f"SSH $ {cmd}\n{output}\n")
+                    cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {busid}"
+                    actual_cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
+                    stdin, stdout, stderr = client.exec_command(actual_cmd)
+                    output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
+                    self.console.append(f"SSH $ {cmd}\n")
+                    if output:
+                        self.console.append(f"{output}\n")
             
             client.close()
             self.console.append("All devices unbound successfully.\n")
@@ -136,16 +139,19 @@ class MainWindow(QMainWindow):
         self.device_table.setColumnCount(3)
         self.device_table.setHorizontalHeaderLabels(["Device", "Description", "Attached"])
         local_layout.addWidget(self.device_table)
-        # Attach All / Detach All buttons under local table
+        # Attach All / Detach All / Clear buttons under local table
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear_console)
         self.attach_all_button = QPushButton("Attach All")
         self.attach_all_button.clicked.connect(self.attach_all_devices)
         self.detach_all_button = QPushButton("Detach All")
         self.detach_all_button.clicked.connect(self.detach_all_devices)
         btns_widget = QWidget()
         btns_layout = QHBoxLayout()
+        btns_layout.addWidget(self.clear_button)
+        btns_layout.addStretch()
         btns_layout.addWidget(self.attach_all_button)
         btns_layout.addWidget(self.detach_all_button)
-        btns_layout.addStretch()
         btns_widget.setLayout(btns_layout)
         local_layout.addWidget(btns_widget)
         tables_layout.addLayout(local_layout)
@@ -190,15 +196,61 @@ class MainWindow(QMainWindow):
         self.load_devices()
 
     def prompt_sudo_password(self):
-        password, ok = QInputDialog.getText(
-            self,
-            "Sudo Password",
-            "Enter your sudo password:",
-            QLineEdit.EchoMode.Password
-        )
-        if ok and password:
-            self.sudo_password = password
-            print(f"Sudo password set: {bool(self.sudo_password)}")
+        max_attempts = 3
+        attempts = 0
+        
+        while attempts < max_attempts:
+            password, ok = QInputDialog.getText(
+                self,
+                "Sudo Password",
+                f"Enter your sudo password (attempt {attempts + 1}/{max_attempts}):" if attempts > 0 else "Enter your sudo password:",
+                QLineEdit.EchoMode.Password
+            )
+            
+            if not ok:  # User cancelled
+                self.show_error("Sudo password is required for this application to function properly.")
+                self.close()
+                return
+                
+            if not password.strip():  # Empty password
+                attempts += 1
+                if attempts < max_attempts:
+                    QMessageBox.warning(self, "Invalid Password", "Password cannot be empty. Please try again.")
+                    continue
+                else:
+                    self.show_error("No valid sudo password provided. Application will exit.")
+                    self.close()
+                    return
+            
+            # Test the password by running a simple sudo command
+            if self.test_sudo_password(password):
+                self.sudo_password = password
+                print(f"Sudo password validated successfully")
+                return
+            else:
+                attempts += 1
+                if attempts < max_attempts:
+                    QMessageBox.warning(self, "Invalid Password", "Incorrect sudo password. Please try again.")
+                else:
+                    self.show_error("Invalid sudo password after multiple attempts. Application will exit.")
+                    self.close()
+                    return
+
+    def test_sudo_password(self, password):
+        """Test if the provided sudo password is correct"""
+        try:
+            proc = subprocess.run(
+                ['sudo', '-S', 'true'],  # Simple command that just returns true
+                input=password + '\n',
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+                check=False
+            )
+            return proc.returncode == 0
+        except Exception:
+            return False
 
     def load_ips(self):
         if os.path.exists(IPS_FILE):
@@ -335,10 +387,7 @@ class MainWindow(QMainWindow):
             cmd = ["usbip", "detach", "-p", port]
             self.console.append(f"$ sudo {' '.join(cmd)}\n")
             result = self.run_sudo(cmd)
-            if result:
-                self.console.append(f"STDOUT:\n{result.stdout}")
-                self.console.append(f"STDERR:\n{result.stderr}")
-            else:
+            if not result:
                 self.console.append("Detach command failed or returned no output.\n")
 
     def parse_usbip_list(self, output):
@@ -353,9 +402,15 @@ class MainWindow(QMainWindow):
                 devices.append({"busid": busid, "desc": desc})
         return devices
 
+    def filter_sudo_prompts(self, output):
+        """Filter out sudo password prompts from output"""
+        if not output:
+            return ""
+        lines = [line for line in output.splitlines() 
+                if not line.strip().startswith('[sudo] password for')]
+        return '\n'.join(lines).strip()
+
     def run_sudo(self, cmd):
-        self.console.append("run_sudo called\n")
-        print(f"Running sudo command: {' '.join(cmd)}")
         if not self.sudo_password:
             self.console.append("No sudo password set.\n")
             return None
@@ -368,26 +423,25 @@ class MainWindow(QMainWindow):
                 text=True,
                 check=False
             )
-            print(f"Command output: {proc.stdout}, errors: {proc.stderr}")
-            self.console.append(f"STDOUT:\n{proc.stdout}")
-            self.console.append(f"STDERR:\n{proc.stderr}")
+            # Only show output if there's actual content, and filter out sudo password prompts
+            stdout_filtered = self.filter_sudo_prompts(proc.stdout)
+            stderr_filtered = self.filter_sudo_prompts(proc.stderr)
+            
+            if stdout_filtered:
+                self.console.append(f"{stdout_filtered}\n")
+            if stderr_filtered:
+                self.console.append(f"{stderr_filtered}\n")
             return proc
         except Exception as e:
             self.console.append(f"Exception running sudo: {e}\n")
-            print(f"Exception running sudo: {e}")
             return None
 
     def toggle_attach(self, ip, busid, desc, state):
-        self.console.append(f"toggle_attach called with state={state}\n")
-        print(f"toggle_attach called: ip={ip}, busid={busid}, state={state}")
         if state == 2:  # Checked (Attach)
             cmd = ["usbip", "attach", "-r", ip, "-b", busid]
             self.console.append(f"$ sudo {' '.join(cmd)}\n")
             result = self.run_sudo(cmd)
-            if result:
-                self.console.append(f"STDOUT:\n{result.stdout}")
-                self.console.append(f"STDERR:\n{result.stderr}")
-            else:
+            if not result:
                 self.console.append("Attach command failed or returned no output.\n")
             self.save_state(ip, busid, True)
         elif state == 0:  # Unchecked (Detach)
@@ -413,10 +467,7 @@ class MainWindow(QMainWindow):
                 cmd = ["usbip", "detach", "-p", port_num]
                 self.console.append(f"$ sudo {' '.join(cmd)}\n")
                 result = self.run_sudo(cmd)
-                if result:
-                    self.console.append(f"STDOUT:\n{result.stdout}")
-                    self.console.append(f"STDERR:\n{result.stderr}")
-                else:
+                if not result:
                     self.console.append("Detach command failed or returned no output.\n")
             else:
                 self.console.append(f"Could not find port for device '{desc}'\n")
@@ -445,6 +496,11 @@ class MainWindow(QMainWindow):
 
     def show_error(self, message):
         QMessageBox.critical(self, "Error", message)
+
+    def clear_console(self):
+        """Clear the console output"""
+        self.console.clear()
+        self.console.append("Console cleared.\n")
 
     def closeEvent(self, event):
         self.save_ips()
@@ -514,8 +570,10 @@ class MainWindow(QMainWindow):
             self.ipd_reset_button.setVisible(True)
             self.unbind_all_button.setVisible(True)  # Show the unbind all button
             stdin, stdout, stderr = client.exec_command("usbip list -l")
-            output = stdout.read().decode() + stderr.read().decode()
-            self.console.append(f"SSH $ usbip list -l\n{output}\n")
+            output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
+            self.console.append(f"SSH $ usbip list -l\n")
+            if output:
+                self.console.append(f"{output}\n")
             devices = self.parse_ssh_usbip_list(output)
             for row, dev in enumerate(devices):
                 self.remote_table.insertRow(row)
@@ -549,15 +607,19 @@ class MainWindow(QMainWindow):
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(ip, username=username, password=password, timeout=10)
             if state == 2:  # Checked (Bind)
-                cmd = f"echo {password} | sudo -S usbip bind -b {busid}"
+                actual_cmd = f"echo {password} | sudo -S usbip bind -b {busid}"
+                safe_cmd = f"echo [HIDDEN] | sudo -S usbip bind -b {busid}"
             elif state == 0:  # Unchecked (Unbind)
-                cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
+                actual_cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
+                safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {busid}"
             else:
                 client.close()
                 return
-            stdin, stdout, stderr = client.exec_command(cmd)
-            output = stdout.read().decode() + stderr.read().decode()
-            self.console.append(f"SSH $ {cmd}\n{output}\n")
+            stdin, stdout, stderr = client.exec_command(actual_cmd)
+            output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
+            self.console.append(f"SSH $ {safe_cmd}\n")
+            if output:
+                self.console.append(f"{output}\n")
             client.close()
             self.load_devices()  # Only refresh local table
         except Exception as e:
@@ -632,15 +694,21 @@ class MainWindow(QMainWindow):
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(ip, username=username, password=password, timeout=10)
             # Restart usbipd
-            cmd = f"echo {password} | sudo -S systemctl restart usbipd"
-            stdin, stdout, stderr = client.exec_command(cmd)
-            output = stdout.read().decode() + stderr.read().decode()
-            self.console.append(f"SSH $ {cmd}\n{output}\n")
+            actual_cmd = f"echo {password} | sudo -S systemctl restart usbipd"
+            safe_cmd = f"echo [HIDDEN] | sudo -S systemctl restart usbipd"
+            stdin, stdout, stderr = client.exec_command(actual_cmd)
+            output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
+            self.console.append(f"SSH $ {safe_cmd}\n")
+            if output:
+                self.console.append(f"{output}\n")
             # Show status after restart
-            status_cmd = f"echo {password} | sudo -S systemctl status usbipd"
-            stdin, stdout, stderr = client.exec_command(status_cmd)
-            status_output = stdout.read().decode() + stderr.read().decode()
-            self.console.append(f"SSH $ {status_cmd}\n{status_output}\n")
+            actual_status_cmd = f"echo {password} | sudo -S systemctl status usbipd"
+            safe_status_cmd = f"echo [HIDDEN] | sudo -S systemctl status usbipd"
+            stdin, stdout, stderr = client.exec_command(actual_status_cmd)
+            status_output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
+            self.console.append(f"SSH $ {safe_status_cmd}\n")
+            if status_output:
+                self.console.append(f"{status_output}\n")
             client.close()
         except Exception as e:
             self.console.append(f"Error restarting usbipd: {e}\n")
