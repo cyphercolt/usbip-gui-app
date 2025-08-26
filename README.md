@@ -2,6 +2,11 @@
 
 A **secure**, modern Linux desktop GUI for managing USBIP devices locally and remotely via SSH. Perfect for gaming setups, home labs, and remote USB device management.
 
+## 📷 Screenshots
+<img width="200" height="132" alt="image" src="https://github.com/user-attachments/assets/de9d4001-f804-48f4-ba80-9e89d42ef945" />
+<img width="1094" height="630" alt="image" src="https://github.com/user-attachments/assets/e3a4abc7-bef7-4d0a-b42f-dc26fdf5a6f4" />
+
+
 ## ✨ Features
 
 ### 🔌 Device Management
