@@ -13,6 +13,25 @@ STATE_FILE = "usbip_state.json"
 SSH_STATE_FILE = "ssh_state.json"
 
 class MainWindow(QMainWindow):
+    def attach_all_devices(self):
+        for row in range(self.device_table.rowCount()):
+            checkbox = self.device_table.cellWidget(row, 2)
+            busid_item = self.device_table.item(row, 0)
+            desc_item = self.device_table.item(row, 1)
+            if checkbox and not checkbox.isChecked():
+                # Only attach if not checked
+                checkbox.setChecked(True)
+                # The checkbox's stateChanged signal will call toggle_attach
+
+    def detach_all_devices(self):
+        for row in range(self.device_table.rowCount()):
+            checkbox = self.device_table.cellWidget(row, 2)
+            busid_item = self.device_table.item(row, 0)
+            desc_item = self.device_table.item(row, 1)
+            if checkbox and checkbox.isChecked():
+                # Only detach if checked
+                checkbox.setChecked(False)
+                # The checkbox's stateChanged signal will call toggle_attach
     def __init__(self):
         super().__init__()
         self.setWindowTitle("USBIP GUI Application")
@@ -77,6 +96,18 @@ class MainWindow(QMainWindow):
         self.device_table.setColumnCount(3)
         self.device_table.setHorizontalHeaderLabels(["Device", "Description", "Attached"])
         local_layout.addWidget(self.device_table)
+        # Attach All / Detach All buttons under local table
+        self.attach_all_button = QPushButton("Attach All")
+        self.attach_all_button.clicked.connect(self.attach_all_devices)
+        self.detach_all_button = QPushButton("Detach All")
+        self.detach_all_button.clicked.connect(self.detach_all_devices)
+        btns_widget = QWidget()
+        btns_layout = QHBoxLayout()
+        btns_layout.addWidget(self.attach_all_button)
+        btns_layout.addWidget(self.detach_all_button)
+        btns_layout.addStretch()
+        btns_widget.setLayout(btns_layout)
+        local_layout.addWidget(btns_widget)
         tables_layout.addLayout(local_layout)
 
         # Remote SSH table
@@ -94,6 +125,14 @@ class MainWindow(QMainWindow):
         self.console.setReadOnly(True)
         self.layout.addWidget(QLabel("Console Output:"))
         self.layout.addWidget(self.console)
+
+        # Exit button at bottom right
+        exit_layout = QHBoxLayout()
+        exit_layout.addStretch()
+        self.exit_button = QPushButton("Exit")
+        self.exit_button.clicked.connect(self.close)
+        exit_layout.addWidget(self.exit_button)
+        self.layout.addLayout(exit_layout)
 
         self.load_ips()
         self.load_devices()
