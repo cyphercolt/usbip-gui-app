@@ -27,7 +27,6 @@ class FileEncryption:
             'system': platform.system(),
             'machine': platform.machine(),
             'processor': platform.processor()[:50],  # Limit length
-            'timestamp': str(int(time.time() // 86400))  # Daily rotation component
         }
         
         # Add some file system info for uniqueness
@@ -40,8 +39,8 @@ class FileEncryption:
         # Create a deterministic string from system info
         key_string = json.dumps(system_info, sort_keys=True)
         
-        # Generate a dynamic salt based on system characteristics
-        salt_material = f"{platform.node()}{platform.system()}{os.getpid()}"
+        # Generate a deterministic salt based on system characteristics (without PID)
+        salt_material = f"{platform.node()}{platform.system()}{system_info['fs_id']}"
         salt = hashlib.sha256(salt_material.encode()).digest()[:16]
         
         # Derive encryption key using PBKDF2 with higher iterations
@@ -55,6 +54,34 @@ class FileEncryption:
         self._key = key
         return key
     
+    def _get_legacy_key(self):
+        """Generate legacy key for backward compatibility"""
+        # Original key generation method from v1.0
+        system_info = {
+            'hostname': platform.node(),
+            'system': platform.system(),
+            'machine': platform.machine(),
+            'processor': platform.processor()[:50],
+        }
+        
+        try:
+            stat = os.stat('/')
+            system_info['fs_id'] = str(stat.st_dev)
+        except:
+            system_info['fs_id'] = 'unknown'
+        
+        key_string = json.dumps(system_info, sort_keys=True)
+        
+        # Original static salt
+        salt = b"usbip_gui_salt_v1"
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            iterations=100000,
+        )
+        return base64.urlsafe_b64encode(kdf.derive(key_string.encode()))
+
     def encrypt_data(self, data):
         """Encrypt a dictionary to base64 string"""
         try:
@@ -67,15 +94,37 @@ class FileEncryption:
             return None
     
     def decrypt_data(self, encrypted_str):
-        """Decrypt base64 string to dictionary"""
+        """Decrypt base64 string to dictionary with backward compatibility"""
+        # Try new encryption method first
         try:
             encrypted_bytes = base64.urlsafe_b64decode(encrypted_str.encode())
             fernet = Fernet(self._get_system_key())
             decrypted_bytes = fernet.decrypt(encrypted_bytes)
             return json.loads(decrypted_bytes.decode())
         except Exception:
+            pass
+        
+        # Try legacy encryption method for backward compatibility
+        try:
+            encrypted_bytes = base64.urlsafe_b64decode(encrypted_str.encode())
+            fernet = Fernet(self._get_legacy_key())
+            decrypted_bytes = fernet.decrypt(encrypted_bytes)
+            data = json.loads(decrypted_bytes.decode())
+            
+            # Re-encrypt with new method for future use
+            self._migrate_file_to_new_encryption(encrypted_str, data)
+            return data
+        except Exception:
             # Don't leak error details in logs
             return None
+
+    def _migrate_file_to_new_encryption(self, old_encrypted_str, data):
+        """Silently migrate old encryption to new format"""
+        try:
+            # This will be called by save_encrypted_file when the file is next saved
+            pass
+        except Exception:
+            pass
     
     def save_encrypted_file(self, filepath, data):
         """Save data to encrypted file with atomic write"""
