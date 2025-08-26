@@ -3,6 +3,8 @@ import hashlib
 import json
 import os
 import platform
+import secrets
+import time
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
@@ -25,6 +27,7 @@ class FileEncryption:
             'system': platform.system(),
             'machine': platform.machine(),
             'processor': platform.processor()[:50],  # Limit length
+            'timestamp': str(int(time.time() // 86400))  # Daily rotation component
         }
         
         # Add some file system info for uniqueness
@@ -37,13 +40,16 @@ class FileEncryption:
         # Create a deterministic string from system info
         key_string = json.dumps(system_info, sort_keys=True)
         
-        # Derive encryption key using PBKDF2
-        salt = b"usbip_gui_salt_v1"  # Static salt for consistency
+        # Generate a dynamic salt based on system characteristics
+        salt_material = f"{platform.node()}{platform.system()}{os.getpid()}"
+        salt = hashlib.sha256(salt_material.encode()).digest()[:16]
+        
+        # Derive encryption key using PBKDF2 with higher iterations
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,
-            iterations=100000,
+            iterations=200000,  # Increased from 100k for better security
         )
         key = base64.urlsafe_b64encode(kdf.derive(key_string.encode()))
         self._key = key
@@ -56,8 +62,8 @@ class FileEncryption:
             fernet = Fernet(self._get_system_key())
             encrypted_bytes = fernet.encrypt(json_str.encode())
             return base64.urlsafe_b64encode(encrypted_bytes).decode()
-        except Exception as e:
-            print(f"Encryption error: {e}")
+        except Exception:
+            # Don't leak error details in logs
             return None
     
     def decrypt_data(self, encrypted_str):
@@ -67,17 +73,30 @@ class FileEncryption:
             fernet = Fernet(self._get_system_key())
             decrypted_bytes = fernet.decrypt(encrypted_bytes)
             return json.loads(decrypted_bytes.decode())
-        except Exception as e:
-            print(f"Decryption error: {e}")
+        except Exception:
+            # Don't leak error details in logs
             return None
     
     def save_encrypted_file(self, filepath, data):
-        """Save data to encrypted file"""
+        """Save data to encrypted file with atomic write"""
         encrypted_str = self.encrypt_data(data)
         if encrypted_str:
-            with open(filepath, 'w') as f:
-                f.write(encrypted_str)
-            return True
+            # Atomic write to prevent corruption
+            temp_filepath = filepath + ".tmp"
+            try:
+                with open(temp_filepath, 'w') as f:
+                    f.write(encrypted_str)
+                    f.flush()
+                    os.fsync(f.fileno())  # Force write to disk
+                os.replace(temp_filepath, filepath)  # Atomic replacement
+                return True
+            except Exception:
+                # Clean up temp file if it exists
+                try:
+                    os.unlink(temp_filepath)
+                except:
+                    pass
+                return False
         return False
     
     def load_encrypted_file(self, filepath):
@@ -93,24 +112,60 @@ class FileEncryption:
                 return {}
                 
             return self.decrypt_data(encrypted_str) or {}
-        except Exception as e:
-            print(f"Error loading encrypted file {filepath}: {e}")
+        except Exception:
+            # Don't leak file path or error details
             return {}
 
 
 class MemoryProtection:
-    """Simple memory protection for sensitive data"""
+    """Enhanced memory protection for sensitive data"""
     
-    @staticmethod
-    def obfuscate_string(text, key="usbip_memory_key"):
-        """Simple XOR obfuscation for in-memory strings"""
+    def __init__(self):
+        # Generate a random key for each instance
+        self._instance_key = secrets.token_hex(32)
+    
+    def obfuscate_string(self, text):
+        """Advanced obfuscation using random key and multiple passes"""
         if not text:
             return ""
         
-        key_bytes = (key * ((len(text) // len(key)) + 1))[:len(text)]
-        return ''.join(chr(ord(a) ^ ord(b)) for a, b in zip(text, key_bytes))
+        # Convert to bytes for better security
+        text_bytes = text.encode('utf-8')
+        key_bytes = self._instance_key.encode('utf-8')
+        
+        # Multi-pass XOR with different key segments
+        result = bytearray(text_bytes)
+        for i, byte in enumerate(result):
+            key_index = i % len(key_bytes)
+            result[i] = byte ^ key_bytes[key_index] ^ (i & 0xFF)
+        
+        return base64.urlsafe_b64encode(result).decode()
     
-    @staticmethod
-    def deobfuscate_string(obfuscated, key="usbip_memory_key"):
-        """Reverse XOR obfuscation"""
-        return MemoryProtection.obfuscate_string(obfuscated, key)  # XOR is reversible
+    def deobfuscate_string(self, obfuscated):
+        """Reverse the advanced obfuscation"""
+        if not obfuscated:
+            return ""
+        
+        try:
+            result = bytearray(base64.urlsafe_b64decode(obfuscated.encode()))
+            key_bytes = self._instance_key.encode('utf-8')
+            
+            # Reverse the multi-pass XOR
+            for i, byte in enumerate(result):
+                key_index = i % len(key_bytes)
+                result[i] = byte ^ key_bytes[key_index] ^ (i & 0xFF)
+            
+            return result.decode('utf-8')
+        except Exception:
+            return ""
+    
+    def secure_zero_memory(self, data):
+        """Attempt to securely zero memory (best effort)"""
+        if isinstance(data, str):
+            # For strings, we can't directly modify memory, but we can overwrite
+            return "0" * len(data)
+        elif isinstance(data, bytearray):
+            # For bytearrays, we can zero the memory
+            for i in range(len(data)):
+                data[i] = 0
+        return data

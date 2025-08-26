@@ -8,24 +8,29 @@ import subprocess
 from functools import partial
 import paramiko
 from security.crypto import FileEncryption, MemoryProtection
+from security.validator import SecurityValidator, SecureCommandBuilder
+from security.rate_limiter import ConnectionSecurity
 
 IPS_FILE = "ips.enc"
 STATE_FILE = "usbip_state.enc" 
 SSH_STATE_FILE = "ssh_state.enc"
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, sudo_password):
         super().__init__()
         
         # Initialize encryption
         self.file_crypto = FileEncryption()
         self.memory_crypto = MemoryProtection()
+        self.connection_security = ConnectionSecurity()
         
         self.setWindowTitle("USBIP GUI Application")
         self.setGeometry(100, 100, 1000, 600)
 
-        self._obfuscated_sudo_password = ""  # Obfuscated password storage
-        self.prompt_sudo_password()
+        # Store the validated sudo password securely
+        self._obfuscated_sudo_password = self.memory_crypto.obfuscate_string(sudo_password)
+        # Clear the plain text password parameter
+        sudo_password = "0" * len(sudo_password)
 
         self.ssh_client = None  # SSH client reference
 
@@ -169,9 +174,16 @@ class MainWindow(QMainWindow):
         if not ip or not username or not password:
             self.console.append("Missing SSH credentials for Unbind All.\n")
             return
+        
+        # Check rate limiting
+        allowed, remaining_time = self.connection_security.check_ssh_connection_allowed(ip)
+        if not allowed:
+            self.console.append(f"Too many SSH attempts. Try again in {remaining_time} seconds.\n")
+            return
             
         try:
             import paramiko
+            self.connection_security.record_ssh_attempt(ip)
             client = paramiko.SSHClient()
             if accept:
                 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -185,13 +197,24 @@ class MainWindow(QMainWindow):
                 busid_item = self.remote_table.item(row, 0)
                 if checkbox and checkbox.isChecked() and busid_item:
                     busid = busid_item.text()
-                    cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {busid}"
-                    actual_cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
+                    
+                    # Validate busid format for security
+                    if not SecurityValidator.validate_busid(busid):
+                        self.console.append(f"Invalid busid format: {busid}\n")
+                        continue
+                    
+                    # Use secure command builder
+                    actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password)
+                    if not actual_cmd:
+                        self.console.append(f"Failed to build secure command for busid: {busid}\n")
+                        continue
+                    
+                    safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
                     stdin, stdout, stderr = client.exec_command(actual_cmd)
                     output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-                    self.console.append(f"SSH $ {cmd}\n")
+                    self.console.append(f"SSH $ {safe_cmd}\n")
                     if output:
-                        self.console.append(f"{output}\n")
+                        self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
             
             client.close()
             self.console.append("All devices unbound successfully.\n")
@@ -208,66 +231,6 @@ class MainWindow(QMainWindow):
             return ""
         return self.memory_crypto.deobfuscate_string(self._obfuscated_sudo_password)
 
-    def prompt_sudo_password(self):
-        max_attempts = 3
-        attempts = 0
-        
-        while attempts < max_attempts:
-            password, ok = QInputDialog.getText(
-                self,
-                "Sudo Password",
-                f"Enter your sudo password (attempt {attempts + 1}/{max_attempts}):" if attempts > 0 else "Enter your sudo password:",
-                QLineEdit.EchoMode.Password
-            )
-            
-            if not ok:  # User cancelled
-                self.show_error("Sudo password is required for this application to function properly.")
-                self.close()
-                return
-                
-            if not password.strip():  # Empty password
-                attempts += 1
-                if attempts < max_attempts:
-                    QMessageBox.warning(self, "Invalid Password", "Password cannot be empty. Please try again.")
-                    continue
-                else:
-                    self.show_error("No valid sudo password provided. Application will exit.")
-                    self.close()
-                    return
-            
-            # Test the password by running a simple sudo command
-            if self.test_sudo_password(password):
-                # Store obfuscated password in memory
-                self._obfuscated_sudo_password = self.memory_crypto.obfuscate_string(password)
-                # Clear the plain text password from local scope
-                password = "0" * len(password)  # Overwrite
-                print(f"Sudo password validated successfully")
-                return
-            else:
-                attempts += 1
-                if attempts < max_attempts:
-                    QMessageBox.warning(self, "Invalid Password", "Incorrect sudo password. Please try again.")
-                else:
-                    self.show_error("Invalid sudo password after multiple attempts. Application will exit.")
-                    self.close()
-                    return
-
-    def test_sudo_password(self, password):
-        """Test if the provided sudo password is correct"""
-        try:
-            proc = subprocess.run(
-                ['sudo', '-S', 'true'],  # Simple command that just returns true
-                input=password + '\n',
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=10,
-                check=False
-            )
-            return proc.returncode == 0
-        except Exception:
-            return False
-
     def load_ips(self):
         data = self.file_crypto.load_encrypted_file(IPS_FILE)
         ips = data.get('ips', [])
@@ -281,9 +244,19 @@ class MainWindow(QMainWindow):
 
     def add_ip(self):
         text, ok = QInputDialog.getText(self, "Add IP/Hostname", "Enter IP address or hostname:")
-        if ok and text and text not in [self.ip_input.itemText(i) for i in range(self.ip_input.count())]:
-            self.ip_input.addItem(text)
-            self.save_ips()
+        if ok and text:
+            # Validate the IP/hostname format
+            if not SecurityValidator.validate_ip_or_hostname(text):
+                self.show_error("Invalid IP address or hostname format.")
+                return
+            
+            # Check for duplicates
+            existing_ips = [self.ip_input.itemText(i) for i in range(self.ip_input.count())]
+            if text not in existing_ips:
+                self.ip_input.addItem(text)
+                self.save_ips()
+            else:
+                self.show_error("IP/hostname already exists in the list.")
 
     def remove_ip(self):
         current_index = self.ip_input.currentIndex()
@@ -297,17 +270,26 @@ class MainWindow(QMainWindow):
         if not ip:
             self.show_error("No IP/hostname selected.")
             return
+        
+        # Validate IP before using in command
+        if not SecurityValidator.validate_ip_or_hostname(ip):
+            self.show_error("Invalid IP/hostname format.")
+            return
+            
         try:
             result = subprocess.run(
-                ["ping", "-c", "1", ip],
+                ["ping", "-c", "1", "-W", "5", ip],  # Added timeout
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                timeout=10  # Process timeout
             )
             output = result.stdout if result.returncode == 0 else result.stderr
-            self.console.append(f"$ ping -c 1 {ip}\n{output}\n")
+            self.console.append(f"$ ping -c 1 -W 5 {ip}\n{output}\n")
+        except subprocess.TimeoutExpired:
+            self.console.append(f"Ping to {ip} timed out.\n")
         except Exception as e:
-            self.console.append(f"Error pinging {ip}: {e}\n")
+            self.console.append(f"Error pinging {ip}: Connection failed\n")
 
     def load_devices(self):
         self.device_table.setRowCount(0)
@@ -521,11 +503,23 @@ class MainWindow(QMainWindow):
         self.console.append("Console cleared.\n")
 
     def closeEvent(self, event):
-        # Clear sensitive data from memory
+        # Securely clear sensitive data from memory
         if hasattr(self, '_obfuscated_sudo_password'):
-            self._obfuscated_sudo_password = "0" * len(self._obfuscated_sudo_password)
+            self.memory_crypto.secure_zero_memory(self._obfuscated_sudo_password)
+            self._obfuscated_sudo_password = ""
         if hasattr(self, 'last_ssh_password'):
-            self.last_ssh_password = "0" * len(self.last_ssh_password)
+            self.memory_crypto.secure_zero_memory(self.last_ssh_password)
+            self.last_ssh_password = ""
+        if hasattr(self, 'last_ssh_username'):
+            self.last_ssh_username = ""
+        
+        # Close SSH connection if active
+        if hasattr(self, 'ssh_client') and self.ssh_client:
+            try:
+                self.ssh_client.close()
+            except:
+                pass
+            self.ssh_client = None
         
         # Only save IPs if the UI was fully initialized
         if hasattr(self, 'ip_input'):
@@ -536,6 +530,12 @@ class MainWindow(QMainWindow):
         from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox
 
         ip = self.ip_input.currentText()
+        
+        # Validate IP before proceeding
+        if not SecurityValidator.validate_ip_or_hostname(ip):
+            self.show_error("Invalid IP/hostname format.")
+            return
+            
         ssh_state = self.load_ssh_state()
         prev_username = ssh_state.get(ip, {}).get("username", "")
         prev_accept = ssh_state.get(ip, {}).get("accept_fingerprint", False)
@@ -565,6 +565,12 @@ class MainWindow(QMainWindow):
             username = username_input.text()
             password = password_input.text()
             accept = accept_fingerprint.isChecked()
+            
+            # Validate username format
+            if not SecurityValidator.validate_username(username):
+                self.show_error("Invalid username format. Use only alphanumeric characters, dots, underscores, and hyphens.")
+                return
+            
             self.save_ssh_state(ip, username, accept)
             self.last_ssh_username = username
             self.last_ssh_password = password
@@ -590,7 +596,7 @@ class MainWindow(QMainWindow):
                 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             else:
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=10)
+            client.connect(ip, username=username, password=password, timeout=15)  # Increased timeout
             self.ssh_client = client
             self.ssh_disco_button.setVisible(True)
             self.ipd_reset_button.setVisible(True)
@@ -599,7 +605,7 @@ class MainWindow(QMainWindow):
             output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
             self.console.append(f"SSH $ usbip list -l\n")
             if output:
-                self.console.append(f"{output}\n")
+                self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
             devices = self.parse_ssh_usbip_list(output)
             for row, dev in enumerate(devices):
                 self.remote_table.insertRow(row)
@@ -617,7 +623,7 @@ class MainWindow(QMainWindow):
                 self.remote_table.setCellWidget(row, 2, checkbox)
             client.close()
         except Exception as e:
-            self.console.append(f"SSH error: {e}\n")
+            self.console.append(f"SSH connection failed: Authentication or network error\n")
             # Hide SSH buttons on error
             self.ssh_disco_button.setVisible(False)
             self.ipd_reset_button.setVisible(False)
@@ -625,31 +631,44 @@ class MainWindow(QMainWindow):
 
     def toggle_bind_remote(self, ip, username, password, busid, accept_fingerprint, state):
         import paramiko
+        
+        # Validate busid format for security
+        if not SecurityValidator.validate_busid(busid):
+            self.console.append(f"Invalid busid format: {busid}\n")
+            return
+            
         try:
             client = paramiko.SSHClient()
             if accept_fingerprint:
                 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             else:
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=10)
+            client.connect(ip, username=username, password=password, timeout=15)
+            
             if state == 2:  # Checked (Bind)
-                actual_cmd = f"echo {password} | sudo -S usbip bind -b {busid}"
-                safe_cmd = f"echo [HIDDEN] | sudo -S usbip bind -b {busid}"
+                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(busid, password)
+                safe_cmd = f"echo [HIDDEN] | sudo -S usbip bind -b {SecurityValidator.sanitize_for_shell(busid)}"
             elif state == 0:  # Unchecked (Unbind)
-                actual_cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
-                safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {busid}"
+                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password)
+                safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
             else:
                 client.close()
                 return
+                
+            if not actual_cmd:
+                self.console.append(f"Failed to build secure command for busid: {busid}\n")
+                client.close()
+                return
+                
             stdin, stdout, stderr = client.exec_command(actual_cmd)
             output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
             self.console.append(f"SSH $ {safe_cmd}\n")
             if output:
-                self.console.append(f"{output}\n")
+                self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
             client.close()
             self.load_devices()  # Only refresh local table
         except Exception as e:
-            self.console.append(f"SSH bind/unbind error: {e}\n")
+            self.console.append(f"SSH bind/unbind failed: Connection or authentication error\n")
 
     def parse_ssh_usbip_list(self, output):
         devices = []
@@ -714,23 +733,31 @@ class MainWindow(QMainWindow):
                 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             else:
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=10)
-            # Restart usbipd
-            actual_cmd = f"echo {password} | sudo -S systemctl restart usbipd"
-            safe_cmd = f"echo [HIDDEN] | sudo -S systemctl restart usbipd"
+            client.connect(ip, username=username, password=password, timeout=15)
+            
+            # Restart usbipd using secure command builder
+            actual_cmd = SecureCommandBuilder.build_systemctl_command("restart", "usbipd", password)
+            if not actual_cmd:
+                self.console.append("Failed to build secure restart command.\n")
+                client.close()
+                return
+                
+            safe_cmd = "echo [HIDDEN] | sudo -S systemctl restart usbipd"
             stdin, stdout, stderr = client.exec_command(actual_cmd)
             output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
             self.console.append(f"SSH $ {safe_cmd}\n")
             if output:
-                self.console.append(f"{output}\n")
+                self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
+                
             # Show status after restart
-            actual_status_cmd = f"echo {password} | sudo -S systemctl status usbipd"
-            safe_status_cmd = f"echo [HIDDEN] | sudo -S systemctl status usbipd"
-            stdin, stdout, stderr = client.exec_command(actual_status_cmd)
-            status_output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-            self.console.append(f"SSH $ {safe_status_cmd}\n")
-            if status_output:
-                self.console.append(f"{status_output}\n")
+            actual_status_cmd = SecureCommandBuilder.build_systemctl_command("status", "usbipd", password)
+            if actual_status_cmd:
+                safe_status_cmd = "echo [HIDDEN] | sudo -S systemctl status usbipd"
+                stdin, stdout, stderr = client.exec_command(actual_status_cmd)
+                status_output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
+                self.console.append(f"SSH $ {safe_status_cmd}\n")
+                if status_output:
+                    self.console.append(f"{SecurityValidator.sanitize_console_output(status_output)}\n")
             client.close()
         except Exception as e:
-            self.console.append(f"Error restarting usbipd: {e}\n")
+            self.console.append(f"Error restarting usbipd: Connection or authentication failed\n")
