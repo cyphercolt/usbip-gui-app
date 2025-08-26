@@ -7,83 +7,27 @@ from PyQt6.QtCore import Qt
 import subprocess
 from functools import partial
 import paramiko
+from security.crypto import FileEncryption, MemoryProtection
 
-IPS_FILE = "ips.json"
-STATE_FILE = "usbip_state.json"
-SSH_STATE_FILE = "ssh_state.json"
+IPS_FILE = "ips.enc"
+STATE_FILE = "usbip_state.enc" 
+SSH_STATE_FILE = "ssh_state.enc"
 
 class MainWindow(QMainWindow):
-    def attach_all_devices(self):
-        for row in range(self.device_table.rowCount()):
-            checkbox = self.device_table.cellWidget(row, 2)
-            busid_item = self.device_table.item(row, 0)
-            desc_item = self.device_table.item(row, 1)
-            if checkbox and not checkbox.isChecked():
-                # Only attach if not checked
-                checkbox.setChecked(True)
-                # The checkbox's stateChanged signal will call toggle_attach
-
-    def detach_all_devices(self):
-        for row in range(self.device_table.rowCount()):
-            checkbox = self.device_table.cellWidget(row, 2)
-            busid_item = self.device_table.item(row, 0)
-            desc_item = self.device_table.item(row, 1)
-            if checkbox and checkbox.isChecked():
-                # Only detach if checked
-                checkbox.setChecked(False)
-                # The checkbox's stateChanged signal will call toggle_attach
-
-    def unbind_all_devices(self):
-        """Unbind all bound devices on the remote SSH server and refresh tables"""
-        ip = self.ip_input.currentText()
-        username = getattr(self, "last_ssh_username", "")
-        password = getattr(self, "last_ssh_password", "")
-        accept = getattr(self, "last_ssh_accept", False)
-        
-        if not ip or not username or not password:
-            self.console.append("Missing SSH credentials for Unbind All.\n")
-            return
-            
-        try:
-            import paramiko
-            client = paramiko.SSHClient()
-            if accept:
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            else:
-                client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=10)
-            
-            # Unbind all bound devices
-            for row in range(self.remote_table.rowCount()):
-                checkbox = self.remote_table.cellWidget(row, 2)
-                busid_item = self.remote_table.item(row, 0)
-                if checkbox and checkbox.isChecked() and busid_item:
-                    busid = busid_item.text()
-                    cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {busid}"
-                    actual_cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
-                    stdin, stdout, stderr = client.exec_command(actual_cmd)
-                    output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-                    self.console.append(f"SSH $ {cmd}\n")
-                    if output:
-                        self.console.append(f"{output}\n")
-            
-            client.close()
-            self.console.append("All devices unbound successfully.\n")
-            
-            # Refresh all tables to update the UI and uncheck checkboxes
-            self.refresh_all_tables()
-            
-        except Exception as e:
-            self.console.append(f"Error unbinding all devices: {e}\n")
     def __init__(self):
         super().__init__()
+        
+        # Initialize encryption
+        self.file_crypto = FileEncryption()
+        self.memory_crypto = MemoryProtection()
+        
         self.setWindowTitle("USBIP GUI Application")
         self.setGeometry(100, 100, 1000, 600)
 
-        self.sudo_password = ""
+        self._obfuscated_sudo_password = ""  # Obfuscated password storage
         self.prompt_sudo_password()
 
-        self.ssh_client = None  # Add to __init__
+        self.ssh_client = None  # SSH client reference
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -195,6 +139,75 @@ class MainWindow(QMainWindow):
         self.load_ips()
         self.load_devices()
 
+    def attach_all_devices(self):
+        for row in range(self.device_table.rowCount()):
+            checkbox = self.device_table.cellWidget(row, 2)
+            busid_item = self.device_table.item(row, 0)
+            desc_item = self.device_table.item(row, 1)
+            if checkbox and not checkbox.isChecked():
+                # Only attach if not checked
+                checkbox.setChecked(True)
+                # The checkbox's stateChanged signal will call toggle_attach
+
+    def detach_all_devices(self):
+        for row in range(self.device_table.rowCount()):
+            checkbox = self.device_table.cellWidget(row, 2)
+            busid_item = self.device_table.item(row, 0)
+            desc_item = self.device_table.item(row, 1)
+            if checkbox and checkbox.isChecked():
+                # Only detach if checked
+                checkbox.setChecked(False)
+                # The checkbox's stateChanged signal will call toggle_attach
+
+    def unbind_all_devices(self):
+        """Unbind all bound devices on the remote SSH server and refresh tables"""
+        ip = self.ip_input.currentText()
+        username = getattr(self, "last_ssh_username", "")
+        password = getattr(self, "last_ssh_password", "")
+        accept = getattr(self, "last_ssh_accept", False)
+        
+        if not ip or not username or not password:
+            self.console.append("Missing SSH credentials for Unbind All.\n")
+            return
+            
+        try:
+            import paramiko
+            client = paramiko.SSHClient()
+            if accept:
+                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            else:
+                client.set_missing_host_key_policy(paramiko.RejectPolicy())
+            client.connect(ip, username=username, password=password, timeout=10)
+            
+            # Unbind all bound devices
+            for row in range(self.remote_table.rowCount()):
+                checkbox = self.remote_table.cellWidget(row, 2)
+                busid_item = self.remote_table.item(row, 0)
+                if checkbox and checkbox.isChecked() and busid_item:
+                    busid = busid_item.text()
+                    cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {busid}"
+                    actual_cmd = f"echo {password} | sudo -S usbip unbind -b {busid}"
+                    stdin, stdout, stderr = client.exec_command(actual_cmd)
+                    output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
+                    self.console.append(f"SSH $ {cmd}\n")
+                    if output:
+                        self.console.append(f"{output}\n")
+            
+            client.close()
+            self.console.append("All devices unbound successfully.\n")
+            
+            # Refresh all tables to update the UI and uncheck checkboxes
+            self.refresh_all_tables()
+            
+        except Exception as e:
+            self.console.append(f"Error unbinding all devices: {e}\n")
+
+    def _get_sudo_password(self):
+        """Get the deobfuscated sudo password"""
+        if not self._obfuscated_sudo_password:
+            return ""
+        return self.memory_crypto.deobfuscate_string(self._obfuscated_sudo_password)
+
     def prompt_sudo_password(self):
         max_attempts = 3
         attempts = 0
@@ -224,7 +237,10 @@ class MainWindow(QMainWindow):
             
             # Test the password by running a simple sudo command
             if self.test_sudo_password(password):
-                self.sudo_password = password
+                # Store obfuscated password in memory
+                self._obfuscated_sudo_password = self.memory_crypto.obfuscate_string(password)
+                # Clear the plain text password from local scope
+                password = "0" * len(password)  # Overwrite
                 print(f"Sudo password validated successfully")
                 return
             else:
@@ -253,16 +269,15 @@ class MainWindow(QMainWindow):
             return False
 
     def load_ips(self):
-        if os.path.exists(IPS_FILE):
-            with open(IPS_FILE, "r") as f:
-                ips = json.load(f)
-            for ip in ips:
-                self.ip_input.addItem(ip)
+        data = self.file_crypto.load_encrypted_file(IPS_FILE)
+        ips = data.get('ips', [])
+        for ip in ips:
+            self.ip_input.addItem(ip)
 
     def save_ips(self):
         ips = [self.ip_input.itemText(i) for i in range(self.ip_input.count())]
-        with open(IPS_FILE, "w") as f:
-            json.dump(ips, f)
+        data = {'ips': ips}
+        self.file_crypto.save_encrypted_file(IPS_FILE, data)
 
     def add_ip(self):
         text, ok = QInputDialog.getText(self, "Add IP/Hostname", "Enter IP address or hostname:")
@@ -402,6 +417,12 @@ class MainWindow(QMainWindow):
                 devices.append({"busid": busid, "desc": desc})
         return devices
 
+    def _get_sudo_password(self):
+        """Get the deobfuscated sudo password"""
+        if not self._obfuscated_sudo_password:
+            return ""
+        return self.memory_crypto.deobfuscate_string(self._obfuscated_sudo_password)
+
     def filter_sudo_prompts(self, output):
         """Filter out sudo password prompts from output"""
         if not output:
@@ -411,18 +432,22 @@ class MainWindow(QMainWindow):
         return '\n'.join(lines).strip()
 
     def run_sudo(self, cmd):
-        if not self.sudo_password:
+        sudo_password = self._get_sudo_password()
+        if not sudo_password:
             self.console.append("No sudo password set.\n")
             return None
         try:
             proc = subprocess.run(
                 ['sudo', '-S'] + cmd,
-                input=self.sudo_password + '\n',
+                input=sudo_password + '\n',
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 check=False
             )
+            # Clear password from local scope
+            sudo_password = "0" * len(sudo_password)
+            
             # Only show output if there's actual content, and filter out sudo password prompts
             stdout_filtered = self.filter_sudo_prompts(proc.stdout)
             stderr_filtered = self.filter_sudo_prompts(proc.stderr)
@@ -474,25 +499,18 @@ class MainWindow(QMainWindow):
             self.save_state(ip, busid, False)
 
     def load_state(self, ip):
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, "r") as f:
-                all_state = json.load(f)
-            return all_state.get(ip, {"attached": []})
-        return {"attached": []}
+        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
+        return all_state.get(ip, {"attached": []})
 
     def save_state(self, ip, busid, attached):
-        all_state = {}
-        if os.path.exists(STATE_FILE):
-            with open(STATE_FILE, "r") as f:
-                all_state = json.load(f)
+        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
         state = all_state.get(ip, {"attached": []})
         if attached and busid not in state["attached"]:
             state["attached"].append(busid)
         elif not attached and busid in state["attached"]:
             state["attached"].remove(busid)
         all_state[ip] = state
-        with open(STATE_FILE, "w") as f:
-            json.dump(all_state, f)
+        self.file_crypto.save_encrypted_file(STATE_FILE, all_state)
 
     def show_error(self, message):
         QMessageBox.critical(self, "Error", message)
@@ -503,7 +521,15 @@ class MainWindow(QMainWindow):
         self.console.append("Console cleared.\n")
 
     def closeEvent(self, event):
-        self.save_ips()
+        # Clear sensitive data from memory
+        if hasattr(self, '_obfuscated_sudo_password'):
+            self._obfuscated_sudo_password = "0" * len(self._obfuscated_sudo_password)
+        if hasattr(self, 'last_ssh_password'):
+            self.last_ssh_password = "0" * len(self.last_ssh_password)
+        
+        # Only save IPs if the UI was fully initialized
+        if hasattr(self, 'ip_input'):
+            self.save_ips()
         event.accept()
 
     def prompt_ssh_credentials(self):
@@ -651,10 +677,7 @@ class MainWindow(QMainWindow):
             self.load_remote_local_devices(self.last_ssh_username, self.last_ssh_password, self.last_ssh_accept)
 
     def load_ssh_state(self):
-        if os.path.exists(SSH_STATE_FILE):
-            with open(SSH_STATE_FILE, "r") as f:
-                return json.load(f)
-        return {}
+        return self.file_crypto.load_encrypted_file(SSH_STATE_FILE)
 
     def save_ssh_state(self, ip, username, accept_fingerprint):
         state = self.load_ssh_state()
@@ -662,8 +685,7 @@ class MainWindow(QMainWindow):
             "username": username,
             "accept_fingerprint": accept_fingerprint
         }
-        with open(SSH_STATE_FILE, "w") as f:
-            json.dump(state, f)
+        self.file_crypto.save_encrypted_file(SSH_STATE_FILE, state)
 
     def disconnect_ssh(self):
         if self.ssh_client:

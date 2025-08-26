@@ -3,23 +3,73 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
 
 # Virtual environments
 venv/
 ENV/
 env/
 .venv/
+.virtualenv/
 
 # OS files
 .DS_Store
 Thumbs.db
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
 
-# State and config files
+# Application state files (encrypted and plaintext)
+*.enc
 *.json
-ssh_state.json
-usbip_state.json
-ips.json
+*.json.backup
+ssh_state.*
+usbip_state.*
+ips.*
 
-# IDE files
+# Security test artifacts
+test_security_*.txt
+security_test_*
+
+# IDE and editor files
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+.cache/
+logs/
+
+# Package manager files
+pip-log.txt
+pip-delete-this-directory.txt
+
+# pytest cache
+.pytest_cache/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# System and runtime files
+*.pid
+*.sock
