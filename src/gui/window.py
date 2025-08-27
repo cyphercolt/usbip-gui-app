@@ -14,6 +14,7 @@ import time
 from security.crypto import FileEncryption, MemoryProtection
 from security.validator import SecurityValidator, SecureCommandBuilder
 from security.rate_limiter import ConnectionSecurity
+from styling.themes import ThemeManager
 
 IPS_FILE = "ips.enc"
 STATE_FILE = "usbip_state.enc" 
@@ -297,6 +298,7 @@ class MainWindow(QMainWindow):
         self.auto_refresh_interval = 60  # seconds
         
         # Initialize theme system
+        self.theme_manager = ThemeManager()
         self.theme_setting = "System Theme"  # Default: "System Theme", "Light Theme", "Dark Theme", "OLED Dark"
         
         # Initialize timers before loading settings
@@ -989,120 +991,13 @@ class MainWindow(QMainWindow):
 
     def apply_theme(self):
         """Apply the selected theme to the application"""
-        from PyQt6.QtGui import QPalette
-        
-        if self.theme_setting == "System Theme":
-            # Use system default theme
-            self.setStyleSheet("")
-        elif self.theme_setting == "Light Theme":
-            # Force light theme
-            self.setStyleSheet("""
-                QMainWindow { background-color: #ffffff; color: #000000; }
-                QWidget { background-color: #ffffff; color: #000000; }
-                QDialog { background-color: #ffffff; color: #000000; }
-                QTableWidget { background-color: #ffffff; color: #000000; gridline-color: #cccccc; }
-                QTextEdit { background-color: #ffffff; color: #000000; border: 1px solid #cccccc; }
-                QComboBox { background-color: #ffffff; color: #000000; border: 1px solid #cccccc; padding: 4px; }
-                QPushButton { 
-                    background-color: #f0f0f0; color: #000000; border: 1px solid #cccccc; 
-                    padding: 6px 12px; min-height: 20px; 
-                }
-                QPushButton:hover { background-color: #e0e0e0; }
-                QLabel { color: #000000; }
-                QScrollArea { background-color: #ffffff; }
-            """)
-        elif self.theme_setting == "Dark Theme":
-            # Force dark theme
-            self.setStyleSheet("""
-                QMainWindow { background-color: #2b2b2b; color: #ffffff; }
-                QWidget { background-color: #2b2b2b; color: #ffffff; }
-                QDialog { background-color: #2b2b2b; color: #ffffff; }
-                QTableWidget { background-color: #3c3c3c; color: #ffffff; gridline-color: #555555; }
-                QTextEdit { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; }
-                QComboBox { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 4px; }
-                QPushButton { 
-                    background-color: #404040; color: #ffffff; border: 1px solid #555555; 
-                    padding: 6px 12px; min-height: 20px; 
-                }
-                QPushButton:hover { background-color: #505050; }
-                QLabel { color: #ffffff; }
-                QScrollArea { background-color: #2b2b2b; }
-            """)
-        elif self.theme_setting == "OLED Dark":
-            # Pure black OLED-friendly theme
-            self.setStyleSheet("""
-                QMainWindow { background-color: #000000; color: #ffffff; }
-                QWidget { background-color: #000000; color: #ffffff; }
-                QDialog { background-color: #000000; color: #ffffff; }
-                QTableWidget { background-color: #111111; color: #ffffff; gridline-color: #333333; }
-                QTextEdit { background-color: #000000; color: #ffffff; border: 1px solid #333333; }
-                QComboBox { background-color: #111111; color: #ffffff; border: 1px solid #333333; padding: 4px; }
-                QPushButton { 
-                    background-color: #222222; color: #ffffff; border: 1px solid #333333; 
-                    padding: 6px 12px; min-height: 20px; 
-                }
-                QPushButton:hover { background-color: #333333; }
-                QLabel { color: #ffffff; }
-                QScrollArea { background-color: #000000; }
-            """)
+        self.theme_manager.set_theme(self.theme_setting)
+        stylesheet = self.theme_manager.get_stylesheet(self.theme_setting)
+        self.setStyleSheet(stylesheet)
 
     def get_theme_colors(self):
         """Get theme-appropriate colors for dialogs"""
-        if self.theme_setting == "Light Theme":
-            return {
-                'bg_color': '#ffffff',
-                'text_color': '#333333',
-                'header_color': '#4CAF50',
-                'border_color': '#ddd',
-                'version_color': '#666',
-                'tip_bg_color': '#e8f5e8',
-                'tip_border_color': '#4CAF50'
-            }
-        elif self.theme_setting == "Dark Theme":
-            return {
-                'bg_color': '#2b2b2b',
-                'text_color': '#ffffff',
-                'header_color': '#4CAF50',
-                'border_color': '#555',
-                'version_color': '#ccc',
-                'tip_bg_color': '#1e3a1e',
-                'tip_border_color': '#4CAF50'
-            }
-        elif self.theme_setting == "OLED Dark":
-            return {
-                'bg_color': '#000000',
-                'text_color': '#ffffff',
-                'header_color': '#4CAF50',
-                'border_color': '#333',
-                'version_color': '#ccc',
-                'tip_bg_color': '#001100',
-                'tip_border_color': '#4CAF50'
-            }
-        else:  # System Theme
-            # Detect system theme
-            palette = self.palette()
-            is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
-            
-            if is_dark_mode:
-                return {
-                    'bg_color': '#2b2b2b',
-                    'text_color': '#ffffff',
-                    'header_color': '#4CAF50',
-                    'border_color': '#555',
-                    'version_color': '#ccc',
-                    'tip_bg_color': '#1e3a1e',
-                    'tip_border_color': '#4CAF50'
-                }
-            else:
-                return {
-                    'bg_color': '#f9f9f9',
-                    'text_color': '#333333',
-                    'header_color': '#4CAF50',
-                    'border_color': '#ddd',
-                    'version_color': '#666',
-                    'tip_bg_color': '#e8f5e8',
-                    'tip_border_color': '#4CAF50'
-                }
+        return self.theme_manager.get_dialog_colors(self.theme_setting, self.palette())
 
     def get_auto_reconnect_state(self, ip, busid, table_type="local"):
         """Get auto-reconnect state for a specific device with table type separation"""
@@ -1264,7 +1159,7 @@ class MainWindow(QMainWindow):
 
         # Theme selection combo box
         theme_input = QComboBox()
-        theme_input.addItems(["System Theme", "Light Theme", "Dark Theme", "OLED Dark"])
+        theme_input.addItems(ThemeManager.get_available_themes())
         theme_input.setCurrentText(self.theme_setting)
         theme_layout.addRow("Theme:", theme_input)
 
