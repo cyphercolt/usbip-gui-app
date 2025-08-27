@@ -13,7 +13,12 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 - **🔄 Auto-reconnect** for specific devices with customizable settings
 - **Dual-table interface** for local and remote USB devices
 - **Bulk operations** - Attach All, Detach All, and Unbind All buttons
-- **Service management** - restart and check `usbipd` status remotely
+
+### 🎨 Theme System
+- **4 Built-in themes** - System, Light, Dark, and OLED
+- **Persistent theme settings** - Your theme choice is remembered
+- **Complete theming** - All dialogs and components match selected theme
+- **System integration** - Automatically adapts to system theme when selected
 
 ### 🔒 Security & Privacy
 - **🛡️ AES-256 encryption** for all stored data using Fernet
@@ -33,6 +38,15 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 - **🧹 Clear console** button for clean output
 - **⚡ Real-time feedback** with comprehensive error handling
 - **🎯 Intuitive PyQt6 interface** with modern design
+
+### 🔧 Recent Improvements
+- **✅ Smart refresh system** - Auto-refresh preserves device states and user settings
+- **✅ Enhanced Qt signal handling** - Prevents unwanted operations during UI updates
+- **✅ Persistent auto-reconnect states** - Settings survive refreshes and theme changes
+- **✅ Complete theme persistence** - Theme selection remembered across sessions
+- **✅ Themed system dialogs** - Password prompts and all dialogs respect selected theme
+- **✅ Optimized state management** - Unified storage system with proper encryption
+- **✅ Robust error prevention** - Signal blocking prevents accidental device operations
 
 ## 📋 Requirements
 
@@ -153,14 +167,22 @@ python3 src/main.py
 - **⚡ Use "Attach All/Detach All"** for bulk local device operations
 - **⚡ Use "Unbind All"** for bulk remote device operations  
 - **⏸️ Grace period** - Auto-reconnect pauses for 60 seconds after bulk operations
+
+### Interface & Customization
+- **🎨 Click "Settings"** to access theme selection and configuration options
+- **🌟 Choose from 4 themes** - System (adaptive), Light, Dark, or OLED (pure black)
+- **💾 Automatic persistence** - Your theme choice and settings are remembered
+- **🔄 Smart refresh** - Interface updates preserve all your settings and device states
 - **🔄 Click "IPD Reset"** to restart remote usbipd service
 - **🧹 Click "Clear"** to clean console output
 
-### Security Features
-- All configuration **automatically encrypted** and stored securely
-- **No passwords stored** - only kept in protected memory during runtime
-- **System-specific encryption** keys prevent data portability attacks
-- **Console output sanitized** to hide sensitive information
+### 🛡️ Reliability & Stability
+- **Smart signal handling** - Prevents accidental device operations during interface updates
+- **Persistent state management** - Auto-reconnect settings survive refreshes and theme changes
+- **Unified storage system** - All configuration data uses consistent encrypted format
+- **Graceful error recovery** - Application handles network issues and device changes smoothly
+- **Memory-safe operations** - Proper Qt signal blocking prevents unwanted state changes
+- **Atomic file operations** - Configuration saves are protected against corruption
 
 ### 🔄 Auto-Reconnect Features
 
@@ -316,6 +338,17 @@ sudo systemctl enable usbipd
 sudo systemctl status usbipd
 ```
 
+### Interface & Theme Issues
+- **"Refresh causing devices to unbind"** - ✅ **FIXED** - Smart signal handling prevents unwanted operations
+
+- **"Auto-reconnect settings lost after refresh"** - ✅ **FIXED** - Enhanced state persistence system
+
+- **"Theme not saving between sessions"** - ✅ **FIXED** - Improved configuration storage
+
+- **"Password dialog not themed"** - ✅ **FIXED** - Custom themed dialogs for all components
+
+- **"Settings not preserved during UI updates"** - ✅ **FIXED** - Unified state management
+
 ### Security Notes
 - 🔒 All passwords are **memory-only** with advanced obfuscation and never written to disk
 - 🏠 **Enhanced for trusted networks** - rate limiting provides additional protection
@@ -342,8 +375,10 @@ sudo systemctl status usbipd
 This project welcomes contributions! Please ensure:
 - All security features remain intact
 - New features include appropriate encryption/protection
-- Code follows existing patterns for memory safety
-- Testing on Linux environments
+- Code follows existing patterns for memory safety and Qt signal management
+- Proper state persistence using the unified storage system
+- Theme support for all new UI components
+- Testing on Linux environments with comprehensive error handling
 
 ## 📜 License
 
@@ -356,5 +391,3 @@ Crafted with ❤️ using:
 - **PyQt6** for the beautiful GUI framework
 - **Python cryptography** for bulletproof encryption
 - **Real human testing** for usability and security validation
-
-*Perfect for basement gaming theaters and home lab enthusiasts! 🎮🏠*
