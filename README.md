@@ -6,7 +6,7 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 
 ## 📷 Screenshots
 <img width="369" height="146" alt="image" src="https://github.com/user-attachments/assets/1a85b6e0-37dd-49c1-92f4-0f50cab4f9bc" />
-<img width="1003" height="626" alt="image" src="https://github.com/user-attachments/assets/93d7cf1b-b9ce-4778-88eb-ed1668e50bb5" />
+<img width="997" height="924" alt="image" src="https://github.com/user-attachments/assets/b22106a0-9404-4fba-8f0b-49efd36aefca" />
 
 
 ## ✨ Features
