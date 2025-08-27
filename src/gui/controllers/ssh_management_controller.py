@@ -9,7 +9,7 @@ This controller handles all SSH-related operations including:
 """
 
 import paramiko
-from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox
+from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox, QTableWidgetItem
 from ..widgets.toggle_button import ToggleButton
 from security.validator import SecurityValidator, SecureCommandBuilder
 
@@ -121,6 +121,10 @@ class SSHManagementController:
                 toggle_btn.setChecked(is_bound)
                 toggle_btn.blockSignals(False)
                 
+                # Add sortable text item for the Action column
+                action_item = QTableWidgetItem("BOUND" if is_bound else "UNBOUND")
+                self.main_window.remote_table.setItem(row, 2, action_item)
+                
                 # Now connect the signal handler
                 toggle_btn.toggled.connect(
                     lambda state, ip=ip, username=username, password=password, busid=dev["busid"], desc=dev["desc"], accept=accept_fingerprint: 
@@ -133,8 +137,13 @@ class SSHManagementController:
                 
                 # Set the initial state WITHOUT triggering the signal
                 auto_btn.blockSignals(True)
-                auto_btn.setChecked(self.main_window.get_auto_reconnect_state(ip, dev["busid"], "remote"))
+                auto_enabled = self.main_window.get_auto_reconnect_state(ip, dev["busid"], "remote")
+                auto_btn.setChecked(auto_enabled)
                 auto_btn.blockSignals(False)
+                
+                # Add sortable text item for the Auto column
+                auto_item = QTableWidgetItem("AUTO" if auto_enabled else "MANUAL")
+                self.main_window.remote_table.setItem(row, 3, auto_item)
                 
                 # Now connect the signal handler
                 auto_btn.toggled.connect(
@@ -198,9 +207,13 @@ class SSHManagementController:
             if state == 2:  # Bind operation
                 self.main_window.save_remote_state(ip, busid, True)
                 self.main_window.append_simple_message(f"✅ Device '{desc}' bound successfully")
+                # Update sorting item
+                self.main_window.update_remote_table_sorting_items(busid, bound=True)
             elif state == 0:  # Unbind operation  
                 self.main_window.save_remote_state(ip, busid, False)
                 self.main_window.append_simple_message(f"✅ Device '{desc}' unbound successfully")
+                # Update sorting item
+                self.main_window.update_remote_table_sorting_items(busid, bound=False)
             
             # Start grace period to prevent auto-reconnect interference
             self.main_window.start_grace_period()

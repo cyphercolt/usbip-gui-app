@@ -385,6 +385,35 @@ class MainWindow(QMainWindow):
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Make non-editable
         return item
 
+    def update_table_item_for_sorting(self, table, row, column, text):
+        """Update table item text for sorting purposes"""
+        if table and row < table.rowCount() and column < table.columnCount():
+            item = table.item(row, column)
+            if item:
+                item.setText(text)
+
+    def update_device_table_sorting_items(self, busid, attached=None, auto_enabled=None):
+        """Update sorting text items for device table when button states change"""
+        for row in range(self.device_table.rowCount()):
+            busid_item = self.device_table.item(row, 0)
+            if busid_item and (busid_item.text() == busid or busid_item.text() == f"Port {busid}"):
+                if attached is not None:
+                    self.update_table_item_for_sorting(self.device_table, row, 2, "ATTACHED" if attached else "DETACHED")
+                if auto_enabled is not None:
+                    self.update_table_item_for_sorting(self.device_table, row, 3, "AUTO" if auto_enabled else "MANUAL")
+                break
+
+    def update_remote_table_sorting_items(self, busid, bound=None, auto_enabled=None):
+        """Update sorting text items for remote table when button states change"""
+        for row in range(self.remote_table.rowCount()):
+            busid_item = self.remote_table.item(row, 0)
+            if busid_item and busid_item.text() == busid:
+                if bound is not None:
+                    self.update_table_item_for_sorting(self.remote_table, row, 2, "BOUND" if bound else "UNBOUND")
+                if auto_enabled is not None:
+                    self.update_table_item_for_sorting(self.remote_table, row, 3, "AUTO" if auto_enabled else "MANUAL")
+                break
+
     def attach_all_devices(self):
         """Attach all detached devices (delegate to controller)"""
         self.device_management_controller.attach_all_devices()
@@ -939,18 +968,26 @@ class MainWindow(QMainWindow):
     def update_device_toggle_state(self, busid, attached):
         """Update the toggle button state for a device (delegate to controller)"""
         self.auto_reconnect_controller.update_device_toggle_state(busid, attached)
+        # Also update sorting items
+        self.update_device_table_sorting_items(busid, attached=attached)
 
     def update_remote_toggle_state(self, busid, bound):
         """Update the toggle button state for a remote device (delegate to controller)"""
         self.auto_reconnect_controller.update_remote_toggle_state(busid, bound)
+        # Also update sorting items
+        self.update_remote_table_sorting_items(busid, bound=bound)
 
     def update_auto_toggle_state(self, busid, enabled):
         """Update the auto-reconnect toggle button state for a device (delegate to controller)"""
         self.auto_reconnect_controller.update_auto_toggle_state(busid, enabled)
+        # Also update sorting items
+        self.update_device_table_sorting_items(busid, auto_enabled=enabled)
 
     def update_remote_auto_toggle_state(self, busid, enabled):
         """Update the auto-reconnect toggle button state for a remote device (delegate to controller)"""
         self.auto_reconnect_controller.update_remote_auto_toggle_state(busid, enabled)
+        # Also update sorting items
+        self.update_remote_table_sorting_items(busid, auto_enabled=enabled)
 
     def perform_remote_bind(self, ip, username, password, busid, accept_fingerprint, bind=True):
         """Perform remote bind/unbind operation (delegate to SSH controller)"""
@@ -1009,19 +1046,29 @@ class MainWindow(QMainWindow):
                 
                 # Create toggle button
                 toggle_btn = ToggleButton("ATTACHED", "DETACHED")
-                toggle_btn.setChecked(dev["desc"] in attached_descs)
+                is_attached = dev["desc"] in attached_descs
+                toggle_btn.setChecked(is_attached)
                 toggle_btn.toggled.connect(
                     lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.device_management_controller.toggle_attach(ip, busid, desc, 2 if state else 0)
                 )
+                
+                # Add sortable text item for the Action column
+                action_item = QTableWidgetItem("ATTACHED" if is_attached else "DETACHED")
+                self.device_table.setItem(row, 2, action_item)
                 self.device_table.setCellWidget(row, 2, toggle_btn)
                 
                 # Create auto-reconnect toggle and restore state
                 auto_btn = ToggleButton("AUTO", "MANUAL")
                 # Always read from encrypted file for consistent state
-                auto_btn.setChecked(self.get_auto_reconnect_state(ip, dev["busid"], "local"))
+                auto_enabled = self.get_auto_reconnect_state(ip, dev["busid"], "local")
+                auto_btn.setChecked(auto_enabled)
                 auto_btn.toggled.connect(
                     lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state, "local")
                 )
+                
+                # Add sortable text item for the Auto column
+                auto_item = QTableWidgetItem("AUTO" if auto_enabled else "MANUAL")
+                self.device_table.setItem(row, 3, auto_item)
                 self.device_table.setCellWidget(row, 3, auto_btn)
 
             # Add locally attached devices that aren't in remote list
@@ -1050,12 +1097,20 @@ class MainWindow(QMainWindow):
                         toggle_btn.toggled.connect(
                             lambda state, port=current_port, desc=desc: self.device_management_controller.detach_local_device(port, desc, 0 if not state else 2)
                         )
+                        
+                        # Add sortable text item for the Action column
+                        action_item = QTableWidgetItem("ATTACHED")
+                        self.device_table.setItem(row, 2, action_item)
                         self.device_table.setCellWidget(row, 2, toggle_btn)
                         
                         # Create disabled auto-reconnect toggle for local devices
                         auto_btn = ToggleButton("N/A", "N/A")
                         auto_btn.setEnabled(False)
                         auto_btn.setStyleSheet("QPushButton { background-color: #ccc; color: #666; }")
+                        
+                        # Add sortable text item for the Auto column
+                        auto_item = QTableWidgetItem("N/A")
+                        self.device_table.setItem(row, 3, auto_item)
                         self.device_table.setCellWidget(row, 3, auto_btn)
                         
         except Exception as e:
