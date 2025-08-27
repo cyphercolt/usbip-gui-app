@@ -146,7 +146,7 @@ class MainWindow(QMainWindow):
         self.auto_reconnect_grace_period = False  # Flag to pause auto-reconnect temporarily
 
         # Auto-reconnect settings button
-        self.auto_settings_button = QPushButton("Auto Settings")
+        self.auto_settings_button = QPushButton("Settings")
         self.auto_settings_button.clicked.connect(self.show_auto_reconnect_settings)
         btn_layout.addWidget(self.auto_settings_button)
 
@@ -296,6 +296,9 @@ class MainWindow(QMainWindow):
         self.auto_refresh_enabled = False
         self.auto_refresh_interval = 60  # seconds
         
+        # Initialize theme system
+        self.theme_setting = "System Theme"  # Default: "System Theme", "Light Theme", "Dark Theme", "OLED Dark"
+        
         # Initialize timers before loading settings
         # Auto-reconnect timer
         self.auto_reconnect_timer = QTimer()
@@ -333,7 +336,7 @@ class MainWindow(QMainWindow):
         self.console.append(f"• Auto-reconnect {'enabled' if self.auto_reconnect_enabled else 'disabled'} every {self.auto_reconnect_interval} seconds")
         self.console.append("• Use 'Auto' column to enable per-device auto-reconnect")
         self.console.append("• Works for both ATTACH (local) and BIND (remote) operations")
-        self.console.append("• Use 'Auto Settings' to customize timing and enable/disable features")
+        self.console.append("• Use 'Settings' to customize timing and enable/disable features")
         self.console.append("")
         self.console.append("Ready for device management!")
         self.console.append("=" * 50)
@@ -343,6 +346,7 @@ class MainWindow(QMainWindow):
         """Create a QTableWidgetItem with tooltip for long text"""
         item = QTableWidgetItem(text)
         item.setToolTip(text)  # Set full text as tooltip
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)  # Make non-editable
         return item
 
     def attach_all_devices(self):
@@ -958,6 +962,10 @@ class MainWindow(QMainWindow):
         self.grace_period_duration = data.get('grace_period', 60)
         self.auto_refresh_enabled = data.get('auto_refresh_enabled', False)
         self.auto_refresh_interval = data.get('auto_refresh_interval', 60)
+        self.theme_setting = data.get('theme_setting', 'System Theme')
+        
+        # Apply theme on startup
+        self.apply_theme()
         
         # Start auto-refresh timer if enabled
         if self.auto_refresh_enabled:
@@ -974,9 +982,127 @@ class MainWindow(QMainWindow):
         data['grace_period'] = self.grace_period_duration
         data['auto_refresh_enabled'] = self.auto_refresh_enabled
         data['auto_refresh_interval'] = self.auto_refresh_interval
+        data['theme_setting'] = self.theme_setting
         if 'devices' not in data:
             data['devices'] = {}
         self.file_crypto.save_encrypted_file(AUTO_RECONNECT_FILE, data)
+
+    def apply_theme(self):
+        """Apply the selected theme to the application"""
+        from PyQt6.QtGui import QPalette
+        
+        if self.theme_setting == "System Theme":
+            # Use system default theme
+            self.setStyleSheet("")
+        elif self.theme_setting == "Light Theme":
+            # Force light theme
+            self.setStyleSheet("""
+                QMainWindow { background-color: #ffffff; color: #000000; }
+                QWidget { background-color: #ffffff; color: #000000; }
+                QDialog { background-color: #ffffff; color: #000000; }
+                QTableWidget { background-color: #ffffff; color: #000000; gridline-color: #cccccc; }
+                QTextEdit { background-color: #ffffff; color: #000000; border: 1px solid #cccccc; }
+                QComboBox { background-color: #ffffff; color: #000000; border: 1px solid #cccccc; padding: 4px; }
+                QPushButton { 
+                    background-color: #f0f0f0; color: #000000; border: 1px solid #cccccc; 
+                    padding: 6px 12px; min-height: 20px; 
+                }
+                QPushButton:hover { background-color: #e0e0e0; }
+                QLabel { color: #000000; }
+                QScrollArea { background-color: #ffffff; }
+            """)
+        elif self.theme_setting == "Dark Theme":
+            # Force dark theme
+            self.setStyleSheet("""
+                QMainWindow { background-color: #2b2b2b; color: #ffffff; }
+                QWidget { background-color: #2b2b2b; color: #ffffff; }
+                QDialog { background-color: #2b2b2b; color: #ffffff; }
+                QTableWidget { background-color: #3c3c3c; color: #ffffff; gridline-color: #555555; }
+                QTextEdit { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; }
+                QComboBox { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 4px; }
+                QPushButton { 
+                    background-color: #404040; color: #ffffff; border: 1px solid #555555; 
+                    padding: 6px 12px; min-height: 20px; 
+                }
+                QPushButton:hover { background-color: #505050; }
+                QLabel { color: #ffffff; }
+                QScrollArea { background-color: #2b2b2b; }
+            """)
+        elif self.theme_setting == "OLED Dark":
+            # Pure black OLED-friendly theme
+            self.setStyleSheet("""
+                QMainWindow { background-color: #000000; color: #ffffff; }
+                QWidget { background-color: #000000; color: #ffffff; }
+                QDialog { background-color: #000000; color: #ffffff; }
+                QTableWidget { background-color: #111111; color: #ffffff; gridline-color: #333333; }
+                QTextEdit { background-color: #000000; color: #ffffff; border: 1px solid #333333; }
+                QComboBox { background-color: #111111; color: #ffffff; border: 1px solid #333333; padding: 4px; }
+                QPushButton { 
+                    background-color: #222222; color: #ffffff; border: 1px solid #333333; 
+                    padding: 6px 12px; min-height: 20px; 
+                }
+                QPushButton:hover { background-color: #333333; }
+                QLabel { color: #ffffff; }
+                QScrollArea { background-color: #000000; }
+            """)
+
+    def get_theme_colors(self):
+        """Get theme-appropriate colors for dialogs"""
+        if self.theme_setting == "Light Theme":
+            return {
+                'bg_color': '#ffffff',
+                'text_color': '#333333',
+                'header_color': '#4CAF50',
+                'border_color': '#ddd',
+                'version_color': '#666',
+                'tip_bg_color': '#e8f5e8',
+                'tip_border_color': '#4CAF50'
+            }
+        elif self.theme_setting == "Dark Theme":
+            return {
+                'bg_color': '#2b2b2b',
+                'text_color': '#ffffff',
+                'header_color': '#4CAF50',
+                'border_color': '#555',
+                'version_color': '#ccc',
+                'tip_bg_color': '#1e3a1e',
+                'tip_border_color': '#4CAF50'
+            }
+        elif self.theme_setting == "OLED Dark":
+            return {
+                'bg_color': '#000000',
+                'text_color': '#ffffff',
+                'header_color': '#4CAF50',
+                'border_color': '#333',
+                'version_color': '#ccc',
+                'tip_bg_color': '#001100',
+                'tip_border_color': '#4CAF50'
+            }
+        else:  # System Theme
+            # Detect system theme
+            palette = self.palette()
+            is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
+            
+            if is_dark_mode:
+                return {
+                    'bg_color': '#2b2b2b',
+                    'text_color': '#ffffff',
+                    'header_color': '#4CAF50',
+                    'border_color': '#555',
+                    'version_color': '#ccc',
+                    'tip_bg_color': '#1e3a1e',
+                    'tip_border_color': '#4CAF50'
+                }
+            else:
+                return {
+                    'bg_color': '#f9f9f9',
+                    'text_color': '#333333',
+                    'header_color': '#4CAF50',
+                    'border_color': '#ddd',
+                    'version_color': '#666',
+                    'tip_bg_color': '#e8f5e8',
+                    'tip_border_color': '#4CAF50'
+                }
 
     def get_auto_reconnect_state(self, ip, busid, table_type="local"):
         """Get auto-reconnect state for a specific device with table type separation"""
@@ -1132,17 +1258,34 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(refresh_group)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        # Theme Group
+        theme_group = QGroupBox("Theme Settings")
+        theme_layout = QFormLayout(theme_group)
+
+        # Theme selection combo box
+        theme_input = QComboBox()
+        theme_input.addItems(["System Theme", "Light Theme", "Dark Theme", "OLED Dark"])
+        theme_input.setCurrentText(self.theme_setting)
+        theme_layout.addRow("Theme:", theme_input)
+
+        # Theme info label
+        theme_info_label = QLabel("Choose your preferred theme. System Theme follows your OS settings, while other options force specific themes.")
+        theme_info_label.setWordWrap(True)
+        theme_info_label.setStyleSheet("color: #666; font-style: italic; margin: 10px 0;")
+        theme_layout.addRow(theme_info_label)
+
+        main_layout.addWidget(theme_group)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Apply | QDialogButtonBox.StandardButton.Cancel)
         main_layout.addWidget(buttons)
 
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-
-        if dialog.exec():
+        def apply_settings():
+            """Apply current settings without closing dialog"""
             old_interval = self.auto_reconnect_interval
             old_reconnect_enabled = self.auto_reconnect_enabled
             old_refresh_enabled = self.auto_refresh_enabled
             old_refresh_interval = self.auto_refresh_interval
+            old_theme_setting = self.theme_setting
             
             # Update auto-reconnect settings
             self.auto_reconnect_enabled = reconnect_enabled_input.isChecked()
@@ -1154,7 +1297,15 @@ class MainWindow(QMainWindow):
             self.auto_refresh_enabled = refresh_enabled_input.isChecked()
             self.auto_refresh_interval = refresh_interval_input.value()
             
+            # Update theme settings
+            self.theme_setting = theme_input.currentText()
+            
             self.save_auto_reconnect_settings()
+            
+            # Apply theme if changed
+            if old_theme_setting != self.theme_setting:
+                self.apply_theme()
+                self.console.append(f"🎨 Theme changed to: {self.theme_setting}")
             
             # Handle auto-reconnect enable/disable
             if self.auto_reconnect_enabled != old_reconnect_enabled:
@@ -1177,9 +1328,12 @@ class MainWindow(QMainWindow):
                     self.console.append("⏸️ Auto-refresh disabled")
             elif self.auto_refresh_enabled and old_refresh_interval != self.auto_refresh_interval:
                 self.auto_refresh_timer.start(self.auto_refresh_interval * 1000)
-                self.console.append(f"🔄 Auto-refresh interval updated to {self.auto_refresh_interval}s")
-                
-            self.console.append(f"⚙️ Settings updated: Auto-reconnect {'enabled' if self.auto_reconnect_enabled else 'disabled'} ({self.auto_reconnect_interval}s interval, {self.auto_reconnect_max_attempts} max attempts, {self.grace_period_duration}s grace period) | Auto-refresh {'enabled' if self.auto_refresh_enabled else 'disabled'} ({self.auto_refresh_interval}s)")
+
+        buttons.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(apply_settings)
+        buttons.button(QDialogButtonBox.StandardButton.Ok).clicked.connect(lambda: (apply_settings(), dialog.accept()))
+        buttons.rejected.connect(dialog.reject)
+
+        dialog.exec()
 
     def show_about_dialog(self):
         """Show application about dialog"""
@@ -1196,27 +1350,15 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(dialog)
         layout.setSpacing(15)
 
-        # Detect dark mode
-        palette = self.palette()
-        is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
-        
-        # Theme-appropriate colors
-        if is_dark_mode:
-            bg_color = "#2b2b2b"
-            text_color = "#ffffff"
-            title_color = "#2196F3"
-            header_color = "#2196F3"
-            version_color = "#cccccc"
-            link_color = "#64B5F6"
-            border_color = "#555"
-        else:
-            bg_color = "#f9f9f9"
-            text_color = "#333333"
-            title_color = "#2196F3"
-            header_color = "#2196F3"
-            version_color = "#666666"
-            link_color = "#2196F3"
-            border_color = "#ddd"
+        # Get theme-appropriate colors
+        colors = self.get_theme_colors()
+        bg_color = colors['bg_color']
+        text_color = colors['text_color']
+        header_color = colors['header_color']
+        version_color = colors['version_color']
+        border_color = colors['border_color']
+        title_color = header_color
+        link_color = "#64B5F6" if bg_color == "#000000" else "#2196F3"
 
         # Title
         title_label = QLabel("🔌 USBIP GUI Application")
@@ -1244,6 +1386,7 @@ class MainWindow(QMainWindow):
         content_label.setOpenExternalLinks(True)
         content_label.setTextFormat(Qt.TextFormat.RichText)
         content_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        content_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
         scroll_layout.addWidget(content_label)
         
         scroll_area.setWidget(scroll_widget)
@@ -1332,25 +1475,14 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(dialog)
         layout.setSpacing(15)
 
-        # Detect dark mode
-        palette = self.palette()
-        is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
-        
-        # Theme-appropriate colors
-        if is_dark_mode:
-            bg_color = "#2b2b2b"
-            text_color = "#ffffff"
-            header_color = "#4CAF50"
-            border_color = "#555"
-            tip_bg_color = "#1e3a1e"
-            tip_border_color = "#4CAF50"
-        else:
-            bg_color = "#f9f9f9"
-            text_color = "#333333"
-            header_color = "#4CAF50"
-            border_color = "#ddd"
-            tip_bg_color = "#e8f5e8"
-            tip_border_color = "#4CAF50"
+        # Get theme-appropriate colors
+        colors = self.get_theme_colors()
+        bg_color = colors['bg_color']
+        text_color = colors['text_color']
+        header_color = colors['header_color']
+        border_color = colors['border_color']
+        tip_bg_color = colors['tip_bg_color']
+        tip_border_color = colors['tip_border_color']
 
         # Title
         title_label = QLabel("🚀 USBIP GUI - Quick Start Guide")
@@ -1362,9 +1494,20 @@ class MainWindow(QMainWindow):
         title_label.setStyleSheet(f"color: {header_color}; margin: 10px;")
         layout.addWidget(title_label)
 
-        # Instructions content
-        instructions_text = QTextEdit()
-        instructions_text.setReadOnly(True)
+        # Instructions content with scroll
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        instructions_label = QLabel()
+        instructions_label.setWordWrap(True)
+        instructions_label.setTextFormat(Qt.TextFormat.RichText)
+        instructions_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        instructions_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        scroll_layout.addWidget(instructions_label)
+        
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
         
         # Build the help content with theme-appropriate colors
         help_content = f"""
@@ -1381,7 +1524,7 @@ class MainWindow(QMainWindow):
 <li><b>Auto-refresh:</b> {'Currently enabled' if self.auto_refresh_enabled else 'Currently disabled'} (refreshes every {self.auto_refresh_interval} seconds)</li>
 <li><b>Per-Device Control:</b> Use 'Auto' column to enable auto-reconnect for specific devices</li>
 <li><b>Works for both:</b> ATTACH (local) and BIND (remote) operations</li>
-<li><b>Customization:</b> Use 'Auto Settings' button to configure timing and features</li>
+<li><b>Customization:</b> Use 'Settings' button to configure timing and features</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🎯 Device Management:</h3>
@@ -1406,8 +1549,8 @@ class MainWindow(QMainWindow):
 </p>
         """
         
-        instructions_text.setHtml(help_content)
-        instructions_text.setStyleSheet(f"""
+        instructions_label.setText(help_content)
+        instructions_label.setStyleSheet(f"""
             font-size: 12px; 
             background-color: {bg_color}; 
             color: {text_color};
@@ -1415,7 +1558,7 @@ class MainWindow(QMainWindow):
             border-radius: 5px; 
             padding: 10px;
         """)
-        layout.addWidget(instructions_text)
+        layout.addWidget(scroll_area)
 
         # Close button
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
