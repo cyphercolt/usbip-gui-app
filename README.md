@@ -69,8 +69,8 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 - **SSH access** to remote servers
 
 ## 📷 Screenshots
-<img width="402" height="230" alt="image" src="https://github.com/user-attachments/assets/d1a8f619-e839-4258-ab44-a5de04e2ea1f" /> <img width="249" height="181" alt="image" src="https://github.com/user-attachments/assets/dab0290b-6e21-4e83-a4ed-0a5b631b574b" />
-<img width="1455" height="933" alt="image" src="https://github.com/user-attachments/assets/aa69553a-b549-4c4b-97bd-50083c746377" /><img width="505" height="628" alt="image" src="https://github.com/user-attachments/assets/994b5d74-ae9b-40d9-b630-52cf7e5f7427" /><img width="543" height="627" alt="image" src="https://github.com/user-attachments/assets/1f65e076-6eeb-4300-91ca-51b5567e4c0a" /><img width="547" height="568" alt="image" src="https://github.com/user-attachments/assets/653ecda5-71c6-49ae-abb3-182d0a801453" />
+<img width="402" height="230" alt="image" src="https://github.com/user-attachments/assets/d1a8f619-e839-4258-ab44-a5de04e2ea1f" /> <img width="243" height="170" alt="image" src="https://github.com/user-attachments/assets/48982a04-cea2-4dc9-8840-bb9223d49e7f" /><img width="500" height="426" alt="image" src="https://github.com/user-attachments/assets/1a33aaa9-dcca-49af-aedf-480f97128ae6" /><img width="997" height="925" alt="image" src="https://github.com/user-attachments/assets/aef8f333-2354-4a03-a83a-f2d9e1227722" /><img width="551" height="932" alt="image" src="https://github.com/user-attachments/assets/e2e569a6-39d6-431d-803e-ea8681357274" /><img width="549" height="626" alt="image" src="https://github.com/user-attachments/assets/3a7da74a-eb43-47f7-99ea-7768212d6965" /><img width="549" height="568" alt="image" src="https://github.com/user-attachments/assets/d8cb3bb5-1aee-4c1b-ac0b-c28cc353b746" />
+
 
 
 ## 🏗️ Project Structure
