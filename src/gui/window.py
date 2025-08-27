@@ -2,8 +2,10 @@ import json
 import os
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
-                             QMessageBox, QInputDialog, QTextEdit, QCheckBox, QLineEdit)
-from PyQt6.QtCore import Qt
+                             QMessageBox, QInputDialog, QTextEdit, QCheckBox, QLineEdit,
+                             QSplitter, QHeaderView)
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPalette
 import subprocess
 from functools import partial
 import paramiko
@@ -14,6 +16,65 @@ from security.rate_limiter import ConnectionSecurity
 IPS_FILE = "ips.enc"
 STATE_FILE = "usbip_state.enc" 
 SSH_STATE_FILE = "ssh_state.enc"
+
+
+class ToggleButton(QPushButton):
+    """Custom toggle button that's more visible than checkboxes"""
+    toggled = pyqtSignal(bool)
+    
+    def __init__(self, text_on="ON", text_off="OFF", parent=None):
+        super().__init__(parent)
+        self.text_on = text_on
+        self.text_off = text_off
+        self._state = False
+        self.clicked.connect(self.toggle)
+        self.update_appearance()
+    
+    def toggle(self):
+        self._state = not self._state
+        self.update_appearance()
+        self.toggled.emit(self._state)
+    
+    def setChecked(self, checked):
+        if self._state != checked:
+            self._state = checked
+            self.update_appearance()
+    
+    def isChecked(self):
+        return self._state
+    
+    def update_appearance(self):
+        if self._state:
+            self.setText(self.text_on)
+            self.setStyleSheet("""
+                QPushButton {
+                    background-color: #4CAF50;
+                    color: white;
+                    border: 2px solid #45a049;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #45a049;
+                }
+            """)
+        else:
+            self.setText(self.text_off)
+            self.setStyleSheet("""
+                QPushButton {
+                    background-color: #f44336;
+                    color: white;
+                    border: 2px solid #da190b;
+                    border-radius: 4px;
+                    padding: 4px 8px;
+                    font-weight: bold;
+                }
+                QPushButton:hover {
+                    background-color: #da190b;
+                }
+            """)
+
 
 class MainWindow(QMainWindow):
     def __init__(self, sudo_password):
@@ -78,39 +139,51 @@ class MainWindow(QMainWindow):
 
         self.layout.addLayout(btn_layout)
 
-        # --- Two tables side by side ---
-        tables_layout = QHBoxLayout()
-
-        # Local table
+        # --- Resizable splitter with two tables ---
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        
+        # Local table widget
+        local_widget = QWidget()
         local_layout = QVBoxLayout()
         local_layout.addWidget(QLabel("Local Devices"))
+        
         self.device_table = QTableWidget()
         self.device_table.setColumnCount(3)
-        self.device_table.setHorizontalHeaderLabels(["Device", "Description", "Attached"])
+        self.device_table.setHorizontalHeaderLabels(["Device", "Description", "Action"])
+        
+        # Make tables sortable
+        self.device_table.setSortingEnabled(True)
+        self.device_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
         local_layout.addWidget(self.device_table)
-        # Attach All / Detach All / Clear buttons under local table
-        self.clear_button = QPushButton("Clear")
-        self.clear_button.clicked.connect(self.clear_console)
+        
+        # Attach All / Detach All buttons under local table
         self.attach_all_button = QPushButton("Attach All")
         self.attach_all_button.clicked.connect(self.attach_all_devices)
         self.detach_all_button = QPushButton("Detach All")
         self.detach_all_button.clicked.connect(self.detach_all_devices)
         btns_widget = QWidget()
         btns_layout = QHBoxLayout()
-        btns_layout.addWidget(self.clear_button)
         btns_layout.addStretch()
         btns_layout.addWidget(self.attach_all_button)
         btns_layout.addWidget(self.detach_all_button)
         btns_widget.setLayout(btns_layout)
         local_layout.addWidget(btns_widget)
-        tables_layout.addLayout(local_layout)
-
-        # Remote SSH table
+        local_widget.setLayout(local_layout)
+        
+        # Remote SSH table widget
+        remote_widget = QWidget()
         remote_layout = QVBoxLayout()
         remote_layout.addWidget(QLabel("Remote SSH Devices"))
+        
         self.remote_table = QTableWidget()
         self.remote_table.setColumnCount(3)
-        self.remote_table.setHorizontalHeaderLabels(["Device", "Description", "Remote Bind"])
+        self.remote_table.setHorizontalHeaderLabels(["Device", "Description", "Action"])
+        
+        # Make remote table sortable too
+        self.remote_table.setSortingEnabled(True)
+        self.remote_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
         remote_layout.addWidget(self.remote_table)
         
         # Unbind All button under remote table
@@ -123,15 +196,33 @@ class MainWindow(QMainWindow):
         remote_btns_layout.addWidget(self.unbind_all_button)
         remote_btns_widget.setLayout(remote_btns_layout)
         remote_layout.addWidget(remote_btns_widget)
+        remote_widget.setLayout(remote_layout)
         
-        tables_layout.addLayout(remote_layout)
+        # Add both widgets to splitter
+        splitter.addWidget(local_widget)
+        splitter.addWidget(remote_widget)
+        splitter.setSizes([400, 400])  # Equal initial sizes
+        
+        self.layout.addWidget(splitter)
 
-        self.layout.addLayout(tables_layout)
-
+        # Console section
+        console_layout = QVBoxLayout()
+        console_layout.addWidget(QLabel("Console Output:"))
+        
         self.console = QTextEdit()
         self.console.setReadOnly(True)
-        self.layout.addWidget(QLabel("Console Output:"))
-        self.layout.addWidget(self.console)
+        self.console.setMinimumHeight(200)  # Make console taller to show welcome message fully
+        console_layout.addWidget(self.console)
+        
+        # Clear button at bottom left of console
+        console_bottom_layout = QHBoxLayout()
+        self.clear_button = QPushButton("Clear")
+        self.clear_button.clicked.connect(self.clear_console)
+        console_bottom_layout.addWidget(self.clear_button)
+        console_bottom_layout.addStretch()
+        console_layout.addLayout(console_bottom_layout)
+        
+        self.layout.addLayout(console_layout)
 
         # Exit button at bottom right
         exit_layout = QHBoxLayout()
@@ -143,26 +234,92 @@ class MainWindow(QMainWindow):
 
         self.load_ips()
         self.load_devices()
+        
+        # Clear console after initial loading and show clean welcome message
+        self.console.clear()
+        self.show_welcome_instructions()
+
+    def show_welcome_instructions(self):
+        """Show helpful instructions in the console on startup"""
+        self.console.append("🚀 Welcome to USBIP GUI Application!")
+        self.console.append("")
+        self.console.append("Quick Start Instructions:")
+        self.console.append("• Add an IP / Hostname")
+        self.console.append("• Use SSH Devices to start connection")
+        self.console.append("• IPD Reset refreshes the USBIP Daemon on the remote if needed")
+        self.console.append("")
+        self.console.append("Ready for device management!")
+        self.console.append("=" * 50)
+        self.console.append("")
 
     def attach_all_devices(self):
+        ip = self.ip_input.currentText()
+        if not ip:
+            self.console.append("No IP selected for Attach All.\n")
+            return
+        
+        attached_count = 0
+        failed_count = 0
         for row in range(self.device_table.rowCount()):
-            checkbox = self.device_table.cellWidget(row, 2)
+            toggle_btn = self.device_table.cellWidget(row, 2)
             busid_item = self.device_table.item(row, 0)
             desc_item = self.device_table.item(row, 1)
-            if checkbox and not checkbox.isChecked():
+            if toggle_btn and not toggle_btn.isChecked() and busid_item and desc_item:
                 # Only attach if not checked
-                checkbox.setChecked(True)
-                # The checkbox's stateChanged signal will call toggle_attach
+                busid = busid_item.text()
+                desc = desc_item.text()
+                # Actually perform the attachment
+                success = self.toggle_attach(ip, busid, desc, 2)  # 2 = checked/attached state
+                if success:
+                    attached_count += 1
+                else:
+                    failed_count += 1
+        
+        # Provide detailed feedback
+        if attached_count > 0:
+            self.console.append(f"Successfully attached {attached_count} devices.")
+        if failed_count > 0:
+            self.console.append(f"Failed to attach {failed_count} devices.")
+        if attached_count > 0:
+            self.console.append("Refreshing device list...\n")
+            # Add a small delay to allow usbip commands to complete
+            import time
+            time.sleep(0.5)
+        
+        # Refresh the device table to show updated states
+        self.load_devices()
 
     def detach_all_devices(self):
+        detached_count = 0
+        failed_count = 0
         for row in range(self.device_table.rowCount()):
-            checkbox = self.device_table.cellWidget(row, 2)
+            toggle_btn = self.device_table.cellWidget(row, 2)
             busid_item = self.device_table.item(row, 0)
             desc_item = self.device_table.item(row, 1)
-            if checkbox and checkbox.isChecked():
+            if toggle_btn and toggle_btn.isChecked() and busid_item and desc_item:
                 # Only detach if checked
-                checkbox.setChecked(False)
-                # The checkbox's stateChanged signal will call toggle_attach
+                busid = busid_item.text()
+                desc = desc_item.text()
+                # Actually perform the detachment
+                success = self.toggle_attach("", busid, desc, 0)  # 0 = unchecked/detached state
+                if success:
+                    detached_count += 1
+                else:
+                    failed_count += 1
+        
+        # Provide detailed feedback
+        if detached_count > 0:
+            self.console.append(f"Successfully detached {detached_count} devices.")
+        if failed_count > 0:
+            self.console.append(f"Failed to detach {failed_count} devices.")
+        if detached_count > 0:
+            self.console.append("Refreshing device list...\n")
+            # Add a small delay to allow usbip commands to complete
+            import time
+            time.sleep(0.5)
+        
+        # Refresh the device table to show updated states
+        self.load_devices()
 
     def unbind_all_devices(self):
         """Unbind all bound devices on the remote SSH server and refresh tables"""
@@ -193,9 +350,9 @@ class MainWindow(QMainWindow):
             
             # Unbind all bound devices
             for row in range(self.remote_table.rowCount()):
-                checkbox = self.remote_table.cellWidget(row, 2)
+                toggle_btn = self.remote_table.cellWidget(row, 2)
                 busid_item = self.remote_table.item(row, 0)
-                if checkbox and checkbox.isChecked() and busid_item:
+                if toggle_btn and toggle_btn.isChecked() and busid_item:
                     busid = busid_item.text()
                     
                     # Validate busid format for security
@@ -219,8 +376,14 @@ class MainWindow(QMainWindow):
             client.close()
             self.console.append("All devices unbound successfully.\n")
             
-            # Refresh all tables to update the UI and uncheck checkboxes
-            self.refresh_all_tables()
+            # Update toggle buttons instead of refreshing entire table
+            for row in range(self.remote_table.rowCount()):
+                toggle_btn = self.remote_table.cellWidget(row, 2)
+                if toggle_btn and toggle_btn.isChecked():
+                    toggle_btn.setChecked(False)  # Set to unbound state
+            
+            # Refresh only the local devices table to show available devices
+            self.load_devices()
             
         except Exception as e:
             self.console.append(f"Error unbinding all devices: {e}\n")
@@ -292,9 +455,14 @@ class MainWindow(QMainWindow):
             self.console.append(f"Error pinging {ip}: Connection failed\n")
 
     def load_devices(self):
+        # Disable sorting during table population to prevent widget issues
+        self.device_table.setSortingEnabled(False)
+        
         self.device_table.setRowCount(0)
         ip = self.ip_input.currentText()
         if not ip:
+            # Re-enable sorting before returning
+            self.device_table.setSortingEnabled(True)
             return
         try:
             # Get list of attached busids from usbip port
@@ -306,6 +474,7 @@ class MainWindow(QMainWindow):
             )
             port_output = port_result.stdout
             attached_busids = set()
+            attached_descs = set()  # Build attached descriptions from port output
             current_port = None
             for line in port_output.splitlines():
                 line = line.strip()
@@ -314,6 +483,9 @@ class MainWindow(QMainWindow):
                 elif current_port and line and line[0].isdigit() and '-' in line:
                     busid = line.split()[0]
                     attached_busids.add(busid)
+                elif current_port and line and ":" in line:
+                    desc = line
+                    attached_descs.add(desc)  # Capture attached device descriptions
 
             # List remote devices
             result = subprocess.run(
@@ -326,37 +498,29 @@ class MainWindow(QMainWindow):
             self.console.append(f"$ usbip list -r {ip}\n{output}\n")
             devices = self.parse_usbip_list(output)
 
-            # Prepare attached_descs before using it
-            attached_descs = set()
-            for row in range(self.device_table.rowCount()):
-                desc_item = self.device_table.item(row, 1)
-                if desc_item:
-                    desc = desc_item.text()
-                    attached_descs.add(desc)
-
             # Add remote devices
             for dev in devices:
                 row = self.device_table.rowCount()
                 self.device_table.insertRow(row)
                 self.device_table.setItem(row, 0, QTableWidgetItem(dev["busid"]))
                 self.device_table.setItem(row, 1, QTableWidgetItem(dev["desc"]))
-                checkbox = QCheckBox()
-                checkbox.blockSignals(True)
-                checkbox.setChecked(dev["desc"] in attached_descs)
-                checkbox.blockSignals(False)
-                checkbox.stateChanged.connect(
-                    lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.toggle_attach(ip, busid, desc, state)
+                
+                # Create toggle button instead of checkbox
+                toggle_btn = ToggleButton("ATTACHED", "DETACHED")
+                toggle_btn.setChecked(dev["desc"] in attached_descs)
+                toggle_btn.toggled.connect(
+                    lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.toggle_attach(ip, busid, desc, 2 if state else 0)
                 )
-                self.device_table.setCellWidget(row, 2, checkbox)
+                self.device_table.setCellWidget(row, 2, toggle_btn)
 
             # List locally attached devices (usbip port) that aren't in the remote list
-            attached_descs = set()
+            # Build set of descriptions already added to the table
+            table_descs = set()
             for row in range(self.device_table.rowCount()):
                 desc_item = self.device_table.item(row, 1)
                 if desc_item:
-                    desc = desc_item.text()
-                    attached_descs.add(desc)
-
+                    table_descs.add(desc_item.text())
+            
             current_port = None
             for line in port_output.splitlines():
                 line = line.strip()
@@ -364,20 +528,25 @@ class MainWindow(QMainWindow):
                     current_port = line.split()[1].replace(":", "")
                 elif current_port and line and ":" in line:
                     desc = line
-                    # Only add if not already present
-                    if desc not in attached_descs:
+                    # Only add if not already present in the table
+                    if desc not in table_descs:
                         row = self.device_table.rowCount()
                         self.device_table.insertRow(row)
                         self.device_table.setItem(row, 0, QTableWidgetItem(f"Port {current_port}"))
                         self.device_table.setItem(row, 1, QTableWidgetItem(desc))
-                        checkbox = QCheckBox()
-                        checkbox.setChecked(True)
-                        checkbox.stateChanged.connect(
-                            lambda state, port=current_port, desc=desc: self.detach_local_device(port, desc, state)
+                        
+                        # Create toggle button for local devices
+                        toggle_btn = ToggleButton("ATTACHED", "DETACHED")
+                        toggle_btn.setChecked(True)  # Local devices are already attached
+                        toggle_btn.toggled.connect(
+                            lambda state, port=current_port, desc=desc: self.detach_local_device(port, desc, 0 if not state else 2)
                         )
-                        self.device_table.setCellWidget(row, 2, checkbox)
+                        self.device_table.setCellWidget(row, 2, toggle_btn)
         except Exception as e:
             self.console.append(f"Error loading devices: {e}\n")
+        finally:
+            # Re-enable sorting after table population is complete
+            self.device_table.setSortingEnabled(True)
 
     def detach_local_device(self, port, desc, state):
         if state == 0:  # Unchecked (Detach)
@@ -450,7 +619,9 @@ class MainWindow(QMainWindow):
             result = self.run_sudo(cmd)
             if not result:
                 self.console.append("Attach command failed or returned no output.\n")
+                return False
             self.save_state(ip, busid, True)
+            return True
         elif state == 0:  # Unchecked (Detach)
             # Find the port number for this device description
             port_result = subprocess.run(
@@ -476,9 +647,12 @@ class MainWindow(QMainWindow):
                 result = self.run_sudo(cmd)
                 if not result:
                     self.console.append("Detach command failed or returned no output.\n")
+                    return False
+                self.save_state(ip, busid, False)
+                return True
             else:
                 self.console.append(f"Could not find port for device '{desc}'\n")
-            self.save_state(ip, busid, False)
+                return False
 
     def load_state(self, ip):
         all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
@@ -491,6 +665,21 @@ class MainWindow(QMainWindow):
             state["attached"].append(busid)
         elif not attached and busid in state["attached"]:
             state["attached"].remove(busid)
+        all_state[ip] = state
+        self.file_crypto.save_encrypted_file(STATE_FILE, all_state)
+
+    def load_remote_state(self, ip):
+        """Load remote device bind states for a specific IP"""
+        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
+        return all_state.get(ip, {}).get("remote_bound", {})
+
+    def save_remote_state(self, ip, busid, bound):
+        """Save remote device bind state for a specific IP and busid"""
+        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
+        state = all_state.get(ip, {"attached": [], "remote_bound": {}})
+        if "remote_bound" not in state:
+            state["remote_bound"] = {}
+        state["remote_bound"][busid] = bound
         all_state[ip] = state
         self.file_crypto.save_encrypted_file(STATE_FILE, all_state)
 
@@ -579,14 +768,20 @@ class MainWindow(QMainWindow):
 
     def load_remote_local_devices(self, username, password, accept_fingerprint):
         ip = self.ip_input.currentText()
+        
+        # Disable sorting during table population to prevent widget issues
+        self.remote_table.setSortingEnabled(False)
+        
         self.remote_table.setRowCount(0)
-        # Get attached descriptions from local table
+        
+        # Get attached descriptions from local device table 
         attached_descs = set()
         for row in range(self.device_table.rowCount()):
             desc_item = self.device_table.item(row, 1)
             if desc_item:
                 desc = desc_item.text()
                 attached_descs.add(desc)
+        
         if not ip:
             self.console.append("No IP selected for SSH.\n")
             return
@@ -607,20 +802,22 @@ class MainWindow(QMainWindow):
             if output:
                 self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
             devices = self.parse_ssh_usbip_list(output)
+            
             for row, dev in enumerate(devices):
                 self.remote_table.insertRow(row)
                 self.remote_table.setItem(row, 0, QTableWidgetItem(dev["busid"]))
                 self.remote_table.setItem(row, 1, QTableWidgetItem(dev["desc"]))
-                checkbox = QCheckBox()
-                checkbox.blockSignals(True)
-                # Set checked if description matches any attached local device
-                checkbox.setChecked(dev["desc"] in attached_descs)
-                checkbox.blockSignals(False)
-                checkbox.stateChanged.connect(
+                
+                # Create toggle button for remote devices
+                toggle_btn = ToggleButton("BOUND", "UNBOUND")
+                # Check if this device is currently attached by matching descriptions
+                is_bound = dev["desc"] in attached_descs
+                toggle_btn.setChecked(is_bound)
+                toggle_btn.toggled.connect(
                     lambda state, ip=ip, username=username, password=password, busid=dev["busid"], accept=accept_fingerprint: 
-                        self.toggle_bind_remote(ip, username, password, busid, accept, state)
+                        self.toggle_bind_remote(ip, username, password, busid, accept, 2 if state else 0)
                 )
-                self.remote_table.setCellWidget(row, 2, checkbox)
+                self.remote_table.setCellWidget(row, 2, toggle_btn)
             client.close()
         except Exception as e:
             self.console.append(f"SSH connection failed: Authentication or network error\n")
@@ -628,6 +825,9 @@ class MainWindow(QMainWindow):
             self.ssh_disco_button.setVisible(False)
             self.ipd_reset_button.setVisible(False)
             self.unbind_all_button.setVisible(False)
+        finally:
+            # Re-enable sorting after table population is complete
+            self.remote_table.setSortingEnabled(True)
 
     def toggle_bind_remote(self, ip, username, password, busid, accept_fingerprint, state):
         import paramiko
@@ -665,6 +865,7 @@ class MainWindow(QMainWindow):
             self.console.append(f"SSH $ {safe_cmd}\n")
             if output:
                 self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
+            
             client.close()
             self.load_devices()  # Only refresh local table
         except Exception as e:
@@ -689,11 +890,37 @@ class MainWindow(QMainWindow):
                 desc = ""
         return devices
 
+    def save_remote_device_states(self):
+        """Save the current state of remote device toggle buttons"""
+        states = {}
+        for row in range(self.remote_table.rowCount()):
+            busid_item = self.remote_table.item(row, 0)
+            toggle_btn = self.remote_table.cellWidget(row, 2)
+            if busid_item and toggle_btn:
+                states[busid_item.text()] = toggle_btn.isChecked()
+        return states
+    
+    def restore_remote_device_states(self, saved_states):
+        """Restore the state of remote device toggle buttons"""
+        for row in range(self.remote_table.rowCount()):
+            busid_item = self.remote_table.item(row, 0)
+            toggle_btn = self.remote_table.cellWidget(row, 2)
+            if busid_item and toggle_btn and busid_item.text() in saved_states:
+                toggle_btn.setChecked(saved_states[busid_item.text()])
+
     def refresh_all_tables(self):
+        # Save current remote device states before refresh
+        saved_remote_states = {}
+        if hasattr(self, 'remote_table'):
+            saved_remote_states = self.save_remote_device_states()
+        
         self.load_devices()
         # If you want to use last SSH credentials, store them after successful SSH login
         if hasattr(self, "last_ssh_username") and hasattr(self, "last_ssh_password") and hasattr(self, "last_ssh_accept"):
             self.load_remote_local_devices(self.last_ssh_username, self.last_ssh_password, self.last_ssh_accept)
+            # Restore the saved states
+            if saved_remote_states:
+                self.restore_remote_device_states(saved_remote_states)
 
     def load_ssh_state(self):
         return self.file_crypto.load_encrypted_file(SSH_STATE_FILE)
