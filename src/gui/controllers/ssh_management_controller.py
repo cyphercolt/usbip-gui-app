@@ -85,7 +85,7 @@ class SSHManagementController:
         remote_states = self.main_window.load_remote_state(ip)
         
         if not ip:
-            self.main_window.console.append("No IP selected for SSH.\n")
+            self.main_window.append_simple_message("❌ No IP selected for SSH")
             return
         try:
             client = paramiko.SSHClient()
@@ -101,9 +101,9 @@ class SSHManagementController:
             self.main_window.unbind_all_button.setVisible(True)  # Show the unbind all button
             stdin, stdout, stderr = client.exec_command("usbip list -l")
             output = self.main_window.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-            self.main_window.console.append(f"SSH $ usbip list -l\n")
+            self.main_window.append_verbose_message(f"SSH $ usbip list -l\n")
             if output:
-                self.main_window.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
+                self.main_window.append_verbose_message(f"{SecurityValidator.sanitize_console_output(output)}\n")
             devices = self.parse_ssh_usbip_list(output)
             
             for row, dev in enumerate(devices):
@@ -123,8 +123,8 @@ class SSHManagementController:
                 
                 # Now connect the signal handler
                 toggle_btn.toggled.connect(
-                    lambda state, ip=ip, username=username, password=password, busid=dev["busid"], accept=accept_fingerprint: 
-                        self.toggle_bind_remote(ip, username, password, busid, accept, 2 if state else 0)
+                    lambda state, ip=ip, username=username, password=password, busid=dev["busid"], desc=dev["desc"], accept=accept_fingerprint: 
+                        self.toggle_bind_remote(ip, username, password, busid, desc, accept, 2 if state else 0)
                 )
                 self.main_window.remote_table.setCellWidget(row, 2, toggle_btn)
                 
@@ -143,7 +143,7 @@ class SSHManagementController:
                 self.main_window.remote_table.setCellWidget(row, 3, auto_btn)
             client.close()
         except Exception as e:
-            self.main_window.console.append(f"SSH connection failed: Authentication or network error\n")
+            self.main_window.append_simple_message("❌ SSH connection failed: Authentication or network error")
             # Hide SSH buttons on error
             self.main_window.ssh_disco_button.setVisible(False)
             self.main_window.ipd_reset_button.setVisible(False)
@@ -152,11 +152,12 @@ class SSHManagementController:
             # Re-enable sorting after table population is complete
             self.main_window.remote_table.setSortingEnabled(True)
 
-    def toggle_bind_remote(self, ip, username, password, busid, accept_fingerprint, state):
+    def toggle_bind_remote(self, ip, username, password, busid, desc, accept_fingerprint, state):
         """Toggle bind/unbind state for remote device"""
         # Validate busid format for security
         if not SecurityValidator.validate_busid(busid):
-            self.main_window.console.append(f"Invalid busid format: {busid}\n")
+            self.main_window.append_simple_message(f"❌ Invalid device ID format: {busid}")
+            self.main_window.append_verbose_message(f"Invalid busid format: {busid}\n")
             return
             
         try:
@@ -187,26 +188,26 @@ class SSHManagementController:
                 
             stdin, stdout, stderr = client.exec_command(actual_cmd)
             output = self.main_window.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-            self.main_window.console.append(f"SSH $ {safe_cmd}\n")
+            self.main_window.append_verbose_message(f"SSH $ {safe_cmd}\n")
             if output:
-                self.main_window.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
+                self.main_window.append_verbose_message(f"{SecurityValidator.sanitize_console_output(output)}\n")
             
             client.close()
             
             # Save the remote bind state after successful operation
             if state == 2:  # Bind operation
                 self.main_window.save_remote_state(ip, busid, True)
-                self.main_window.console.append(f"✓ Remote device {busid} bound and state saved\n")
+                self.main_window.append_simple_message(f"✅ Device '{desc}' bound successfully")
             elif state == 0:  # Unbind operation  
                 self.main_window.save_remote_state(ip, busid, False)
-                self.main_window.console.append(f"✓ Remote device {busid} unbound and state saved\n")
+                self.main_window.append_simple_message(f"✅ Device '{desc}' unbound successfully")
             
             # Start grace period to prevent auto-reconnect interference
             self.main_window.start_grace_period()
             
             self.main_window.device_management_controller.load_devices()  # Only refresh local table
         except Exception as e:
-            self.main_window.console.append(f"SSH bind/unbind failed: Connection or authentication error\n")
+            self.main_window.append_simple_message("❌ SSH bind/unbind failed: Connection or authentication error")
 
     def perform_remote_bind(self, ip, username, password, busid, accept_fingerprint, bind=True):
         """Perform remote bind/unbind operation and return success status"""
@@ -396,4 +397,4 @@ class SSHManagementController:
                 )
                 
                 # The load_remote_local_devices should now correctly restore from persistent storage
-                self.main_window.console.append(f"Refresh: UI refreshed with persistent state data\n")
+                self.main_window.append_simple_message("🔄 Refresh: UI refreshed with persistent state data")

@@ -89,10 +89,43 @@ class HelpDialog(QDialog):
         help_content = f"""
 <h3 style="color: {header_color}; margin-top: 0;">📋 Basic Setup:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li><b>Add an IP / Hostname</b> - Enter your remote server's address</li>
+<li><b>Use 'Manage IPs'</b> - Safely add IP addresses without connecting to them</li>
+<li><b>Select an IP</b> - Choose from dropdown (pings automatically with latency display)</li>
+<li><b>Click 'Refresh'</b> - Load devices when ready</li>
 <li><b>Use SSH Devices</b> - Start connection to remote USB/IP daemon</li>
 <li><b>IPD Reset</b> - Refreshes the USBIP Daemon on the remote if needed</li>
-<li><b>Settings</b> - Access theme selection and configuration options</li>
+<li><b>Settings</b> - Access debug mode, console preferences, and configuration options</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">� Gaming & Performance Features:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>🏓 Real-time Ping Monitoring:</b> Live latency display with automatic updates</li>
+<li><b>⏱️ Timeout Protection:</b> 15-second timeouts prevent hanging on bad IPs</li>
+<li><b>💬 Console Modes:</b> Toggle verbose console in settings for detailed output</li>
+<li><b>🔍 Debug Mode:</b> Enable in settings for advanced troubleshooting tools</li>
+<li><b>📝 Smart Messages:</b> See device names instead of technical bus IDs</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">�🎯 Ping Status Indicator Colors:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>🟢 Green - Excellent (≤50ms):</b> Perfect for gaming and real-time applications</li>
+<li><b>🟡 Light Green - Good (51-100ms):</b> Great for most games and applications</li>
+<li><b>🟡 Yellow - Fair (101-150ms):</b> OK for casual gaming, noticeable in fast-paced games</li>
+<li><b>🟠 Orange - High (151-300ms):</b> Poor for gaming, frustrating for real-time tasks</li>
+<li><b>🔴 Red - Very High (>300ms):</b> Unplayable for most games, severe lag</li>
+<li><b>🔴 Red - Connection Issues:</b> Offline, timeout, or connection failed</li>
+<li><b>🔵 Blue - Checking:</b> Currently testing connection</li>
+<li><b>⚫ Gray - Unknown:</b> No IP selected or initial state</li>
+</ul>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>🟢 Green - Excellent (≤50ms):</b> Perfect for gaming and real-time applications</li>
+<li><b>🟡 Light Green - Good (51-100ms):</b> Great for most games and applications</li>
+<li><b>🟡 Yellow - Fair (101-150ms):</b> OK for casual gaming, noticeable in fast-paced games</li>
+<li><b>🟠 Orange - High (151-300ms):</b> Poor for gaming, frustrating for real-time tasks</li>
+<li><b>🔴 Red - Very High (>300ms):</b> Unplayable for most games, severe lag</li>
+<li><b>🔴 Red - Connection Issues:</b> Offline, timeout, or connection failed</li>
+<li><b>🔵 Blue - Checking:</b> Currently testing connection</li>
+<li><b>⚫ Gray - Unknown:</b> No IP selected or initial state</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🎨 Theme & Interface:</h3>
@@ -133,6 +166,12 @@ class HelpDialog(QDialog):
 
 <h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Improvements:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>✅ <b>Gaming-Focused Ping System:</b> Real-time latency monitoring with color-coded performance indicators</li>
+<li>✅ <b>Enhanced Console System:</b> Verbose mode for debugging, simple mode for clean output</li>
+<li>✅ <b>Safe IP Management:</b> Dedicated dialog prevents app hangs on bad IPs</li>
+<li>✅ <b>Timeout Protection:</b> Universal 15-second timeouts prevent hanging</li>
+<li>✅ <b>Debug Mode System:</b> Hidden developer tools accessible through settings</li>
+<li>✅ <b>Smart Device Messages:</b> User-friendly device names improve readability</li>
 <li>✅ <b>Fixed Auto-Refresh Issues:</b> No more unwanted device operations during refresh</li>
 <li>✅ <b>Enhanced State Persistence:</b> Auto-reconnect settings survive all changes</li>
 <li>✅ <b>Complete Theme Support:</b> All dialogs and prompts respect selected theme</li>

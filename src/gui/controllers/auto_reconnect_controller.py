@@ -107,7 +107,7 @@ class AutoReconnectController(QObject):
             return  # Device not found
             
         # Attempt reconnection
-        self.main_window.console.append(
+        self.main_window.append_simple_message(
             f"🔄 Auto-attaching {busid} "
             f"(attempt {self.main_window.auto_reconnect_attempts[device_key]}/"
             f"{self.main_window.auto_reconnect_max_attempts})"
@@ -116,7 +116,7 @@ class AutoReconnectController(QObject):
         success = self.main_window.toggle_attach(ip, busid, device_desc, 2, start_grace_period=False)  # 2 = attach
         
         if success:
-            self.main_window.console.append(f"✅ Auto-attach successful: {busid}")
+            self.main_window.append_simple_message(f"✅ Auto-attach successful: {busid}")
             # Reset attempt counter on success
             if device_key in self.main_window.auto_reconnect_attempts:
                 del self.main_window.auto_reconnect_attempts[device_key]
@@ -124,7 +124,7 @@ class AutoReconnectController(QObject):
             self.update_device_toggle_state(busid, True)
         else:
             if self.main_window.auto_reconnect_attempts[device_key] >= self.main_window.auto_reconnect_max_attempts:
-                self.main_window.console.append(f"❌ Auto-attach failed for {busid} - max attempts reached")
+                self.main_window.append_simple_message(f"❌ Auto-attach failed for {busid} - max attempts reached")
                 # Disable auto-reconnect for this device after max attempts
                 self.main_window.toggle_auto_reconnect(ip, busid, False, "local")
                 self.main_window.update_auto_toggle_state(busid, False)
@@ -150,7 +150,7 @@ class AutoReconnectController(QObject):
         self.main_window.auto_reconnect_attempts[device_key] += 1
         
         # Attempt auto-bind
-        self.main_window.console.append(
+        self.main_window.append_simple_message(
             f"🔄 Auto-binding {busid} "
             f"(attempt {self.main_window.auto_reconnect_attempts[device_key]}/"
             f"{self.main_window.auto_reconnect_max_attempts})"
@@ -159,8 +159,8 @@ class AutoReconnectController(QObject):
         success = self.main_window.perform_remote_bind(ip, username, password, busid, accept, bind=True)
         
         if success:
-            self.main_window.console.append(f"✅ Auto-bind successful: {busid}")
-            self.main_window.console.append("🔄 Refreshing local devices to show newly bound device...")
+            self.main_window.append_simple_message(f"✅ Auto-bind successful: {busid}")
+            self.main_window.append_simple_message("🔄 Refreshing local devices to show newly bound device...")
             # Reset attempt counter on success
             if device_key in self.main_window.auto_reconnect_attempts:
                 del self.main_window.auto_reconnect_attempts[device_key]
@@ -170,7 +170,7 @@ class AutoReconnectController(QObject):
             self.main_window.refresh_local_devices_silently()
         else:
             if self.main_window.auto_reconnect_attempts[device_key] >= self.main_window.auto_reconnect_max_attempts:
-                self.main_window.console.append(f"❌ Auto-bind failed for {busid} - max attempts reached")
+                self.main_window.append_simple_message(f"❌ Auto-bind failed for {busid} - max attempts reached")
                 # Disable auto-reconnect for this device after max attempts
                 self.main_window.toggle_auto_reconnect(ip, busid, False, "remote")
                 self.main_window.update_remote_auto_toggle_state(busid, False)

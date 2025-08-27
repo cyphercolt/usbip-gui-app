@@ -98,6 +98,15 @@ class DataPersistenceController:
         self.main_window.auto_refresh_interval = data.get('auto_refresh_interval', 60)
         self.main_window.theme_setting = data.get('theme_setting', 'System Theme')
         
+        # Load verbose console setting and apply it
+        verbose_console = data.get('verbose_console', False)
+        self.main_window.verbose_console = verbose_console
+        
+        # Load debug mode setting and apply it
+        debug_mode = data.get('debug_mode', False)  # Default to disabled
+        self.main_window.debug_mode = debug_mode
+        self.main_window.apply_debug_mode()
+        
         # Apply theme on startup
         self.main_window.apply_theme()
         
@@ -117,6 +126,8 @@ class DataPersistenceController:
         data['auto_refresh_enabled'] = self.main_window.auto_refresh_enabled
         data['auto_refresh_interval'] = self.main_window.auto_refresh_interval
         data['theme_setting'] = self.main_window.theme_setting
+        data['verbose_console'] = getattr(self.main_window, 'verbose_console', False)
+        data['debug_mode'] = getattr(self.main_window, 'debug_mode', False)
         if 'devices' not in data:
             data['devices'] = {}
         self.main_window.file_crypto.save_encrypted_file(self.AUTO_RECONNECT_FILE, data)

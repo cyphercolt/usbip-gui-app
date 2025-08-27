@@ -24,7 +24,7 @@ class DeviceManagementController(QObject):
         """Attach all detached devices."""
         ip = self.main_window.ip_input.currentText()
         if not ip:
-            self.main_window.console.append("No IP selected for Attach All.\n")
+            self.main_window.append_simple_message("❌ No IP selected for Attach All")
             return
         
         attached_count = 0
@@ -46,11 +46,11 @@ class DeviceManagementController(QObject):
         
         # Provide detailed feedback
         if attached_count > 0:
-            self.main_window.console.append(f"Successfully attached {attached_count} devices.")
+            self.main_window.append_simple_message(f"✅ Successfully attached {attached_count} devices")
         if failed_count > 0:
-            self.main_window.console.append(f"Failed to attach {failed_count} devices.")
+            self.main_window.append_simple_message(f"❌ Failed to attach {failed_count} devices")
         if attached_count > 0:
-            self.main_window.console.append("Refreshing device list...\n")
+            self.main_window.append_simple_message("🔄 Refreshing device list...")
             # Add a small delay to allow usbip commands to complete
             time.sleep(0.5)
         
@@ -82,11 +82,11 @@ class DeviceManagementController(QObject):
         
         # Provide detailed feedback
         if detached_count > 0:
-            self.main_window.console.append(f"Successfully detached {detached_count} devices.")
+            self.main_window.append_simple_message(f"✅ Successfully detached {detached_count} devices")
         if failed_count > 0:
-            self.main_window.console.append(f"Failed to detach {failed_count} devices.")
+            self.main_window.append_simple_message(f"❌ Failed to detach {failed_count} devices")
         if detached_count > 0:
-            self.main_window.console.append("Refreshing device list...\n")
+            self.main_window.append_simple_message("🔄 Refreshing device list...")
             # Add a small delay to allow usbip commands to complete
             time.sleep(0.5)
         
@@ -105,13 +105,13 @@ class DeviceManagementController(QObject):
         accept = getattr(self.main_window, "last_ssh_accept", False)
         
         if not ip or not username or not password:
-            self.main_window.console.append("Missing SSH credentials for Unbind All.\n")
+            self.main_window.append_simple_message("❌ Missing SSH credentials for Unbind All")
             return
         
         # Check rate limiting
         allowed, remaining_time = self.main_window.connection_security.check_ssh_connection_allowed(ip)
         if not allowed:
-            self.main_window.console.append(f"Too many SSH attempts. Try again in {remaining_time} seconds.\n")
+            self.main_window.append_simple_message(f"⏳ Too many SSH attempts. Try again in {remaining_time} seconds")
             return
             
         try:
@@ -147,12 +147,12 @@ class DeviceManagementController(QObject):
                     safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
                     stdin, stdout, stderr = client.exec_command(actual_cmd)
                     output = self.main_window.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-                    self.main_window.console.append(f"SSH $ {safe_cmd}\n")
+                    self.main_window.append_verbose_message(f"SSH $ {safe_cmd}\n")
                     if output:
-                        self.main_window.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
+                        self.main_window.append_verbose_message(f"{SecurityValidator.sanitize_console_output(output)}\n")
             
             client.close()
-            self.main_window.console.append("All devices unbound successfully.\n")
+            self.main_window.append_simple_message("✅ All devices unbound successfully")
             
             # Update toggle buttons and save states to persistent storage
             for row in range(self.main_window.remote_table.rowCount()):
@@ -208,7 +208,8 @@ class DeviceManagementController(QObject):
                 ["usbip", "port"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                timeout=10  # 10 second timeout
             )
             port_output = port_result.stdout
             attached_busids = set()
@@ -232,10 +233,11 @@ class DeviceManagementController(QObject):
                 ["usbip", "list", "-r", ip],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                timeout=15  # 15 second timeout for remote connections
             )
             output = result.stdout if result.returncode == 0 else result.stderr
-            self.main_window.console.append(f"$ usbip list -r {ip}\n{output}\n")
+            self.main_window.append_verbose_message(f"$ usbip list -r {ip}\n{output}\n")
             devices = self.parse_usbip_list(output)
 
             # Add remote devices
@@ -247,8 +249,12 @@ class DeviceManagementController(QObject):
             # List locally attached devices (usbip port) that aren't in the remote list
             self._add_local_attached_devices(port_output, ip, saved_auto_states)
             
+        except subprocess.TimeoutExpired:
+            self.main_window.append_simple_message(f"⏱️ Timeout connecting to {ip} - Check if IP is correct and usbip daemon is running")
+            self.main_window.append_verbose_message(f"Timeout occurred while connecting to {ip}. The IP may not have a usbip daemon running.\n")
         except Exception as e:
-            self.main_window.console.append(f"Error loading devices: {e}\n")
+            self.main_window.append_simple_message(f"❌ Error loading devices from {ip}: {str(e)}")
+            self.main_window.append_verbose_message(f"Error loading devices: {e}\n")
         finally:
             # Re-enable sorting after table population is complete
             self.main_window.device_table.setSortingEnabled(True)
@@ -453,10 +459,11 @@ class DeviceManagementController(QObject):
         """
         if state == 2:  # Checked (Attach)
             cmd = ["usbip", "attach", "-r", ip, "-b", busid]
-            self.main_window.console.append(f"$ sudo {' '.join(cmd)}\n")
+            self.main_window.append_verbose_message(f"$ sudo {' '.join(cmd)}\n")
             result = self.main_window.run_sudo(cmd)
             if not result:
-                self.main_window.console.append("Attach command failed or returned no output.\n")
+                self.main_window.append_simple_message(f"❌ Failed to attach device {desc}")
+                self.main_window.append_verbose_message("Attach command failed or returned no output.\n")
                 return False
             
             # After successful attach, find which port it was assigned to
@@ -465,7 +472,8 @@ class DeviceManagementController(QObject):
                 ["usbip", "port"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                timeout=10  # 10 second timeout
             )
             
             # Find the newly attached device in port list
@@ -496,6 +504,7 @@ class DeviceManagementController(QObject):
                             break
             
             self.main_window.save_state(ip, busid, True)
+            self.main_window.append_simple_message(f"✅ Device '{desc}' attached successfully")
             self.load_devices()  # Refresh device list after successful attach
             if start_grace_period:
                 self.main_window.start_grace_period()  # Prevent auto-refresh interference
@@ -509,7 +518,8 @@ class DeviceManagementController(QObject):
                 ["usbip", "port"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                timeout=10  # 10 second timeout
             )
             port_output = port_result.stdout
             port_num = None
@@ -524,18 +534,21 @@ class DeviceManagementController(QObject):
                     break
             if port_num:
                 cmd = ["usbip", "detach", "-p", port_num]
-                self.main_window.console.append(f"$ sudo {' '.join(cmd)}\n")
+                self.main_window.append_verbose_message(f"$ sudo {' '.join(cmd)}\n")
                 result = self.main_window.run_sudo(cmd)
                 if not result:
-                    self.main_window.console.append("Detach command failed or returned no output.\n")
+                    self.main_window.append_simple_message(f"❌ Failed to detach device '{desc}'")
+                    self.main_window.append_verbose_message("Detach command failed or returned no output.\n")
                     return False
                 self.main_window.save_state(ip, busid, False)
+                self.main_window.append_simple_message(f"✅ Device '{desc}' detached successfully")
                 self.load_devices()  # Refresh device list after successful detach
                 if start_grace_period:
                     self.main_window.start_grace_period()  # Prevent auto-refresh interference
                 return True
             else:
-                self.main_window.console.append(f"Could not find port for device '{desc}'\n")
+                self.main_window.append_simple_message(f"❌ Could not find port for device '{desc}'")
+                self.main_window.append_verbose_message(f"Could not find port for device '{desc}'\n")
                 return False
 
     def parse_usbip_list(self, output):
@@ -569,4 +582,4 @@ class DeviceManagementController(QObject):
         # If SSH is connected, also refresh remote devices
         if hasattr(self.main_window, 'last_ssh_username') and self.main_window.last_ssh_username:
             self.main_window.ssh_management_controller.refresh_with_saved_credentials()
-            self.main_window.console.append("Auto-refresh: Updated remote SSH devices.\n")
+            self.main_window.append_simple_message("🔄 Auto-refresh: Updated remote SSH devices")

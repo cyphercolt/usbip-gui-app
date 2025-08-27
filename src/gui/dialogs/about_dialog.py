@@ -59,7 +59,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label)
 
         # Version and description
-        version_label = QLabel("Version 2.0.0 - Advanced USB/IP Management Tool")
+        version_label = QLabel("Version 2.1.0 - Advanced USB/IP Management Tool with Gaming Features")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"font-size: 12px; color: {version_color}; margin-bottom: 15px;")
         layout.addWidget(version_label)
@@ -97,7 +97,18 @@ class AboutDialog(QDialog):
 <li>🛡️ <b>Enhanced Reliability</b> - Qt signal blocking prevents unwanted operations</li>
 </ul>
 
-<h3 style="color: {header_color}; margin-top: 20px;">🛠️ Technical Excellence:</h3>
+<h3 style="color: {header_color}; margin-top: 20px;">🎮 Gaming & Performance Features:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>🏓 <b>Real-time Ping Monitoring</b> - Live latency display with automatic color coding</li>
+<li>🟢 <b>Gaming Latency Indicators</b> - Green (≤50ms), Yellow (100-150ms), Red (>300ms) for optimal gaming</li>
+<li>�️ <b>Safe IP Management</b> - Dedicated dialog prevents connection hangs on bad IPs</li>
+<li>⏱️ <b>Timeout Protection</b> - 15-second timeouts prevent hanging on unresponsive servers</li>
+<li>💬 <b>Dual Console Modes</b> - Verbose for detailed output, simple for clean user experience</li>
+<li>🔍 <b>Debug Mode</b> - Hidden developer tools for troubleshooting and advanced configuration</li>
+<li>📝 <b>Smart Device Messaging</b> - User-friendly device names instead of technical bus IDs</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">�🛠️ Technical Excellence:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
 <li>Built with <b>PyQt6</b> for modern, responsive UI with enhanced signal handling</li>
 <li><b>AES-256</b> encryption with dynamic salt generation for secure data storage</li>
@@ -107,15 +118,19 @@ class AboutDialog(QDialog):
 <li><b>Complete Theming</b> - 4 themes with persistent settings and themed dialogs</li>
 <li><b>Unified Storage</b> - Consistent encrypted file format with atomic operations</li>
 <li><b>Smart Refresh Logic</b> - UI updates preserve user settings and device states</li>
+<li><b>Robust Error Handling</b> - Comprehensive timeout protection and input validation</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Major Improvements:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>✅ <b>Gaming-Focused Ping System</b> - Real-time latency monitoring with color-coded performance indicators</li>
+<li>✅ <b>Enhanced Console System</b> - Verbose mode for debugging, simple mode for clean output</li>
+<li>✅ <b>Safe IP Management</b> - Prevents app hangs with dedicated IP management dialog</li>
+<li>✅ <b>Timeout Protection</b> - Universal 15-second timeouts prevent hanging on bad connections</li>
+<li>✅ <b>Debug Mode System</b> - Hidden developer tools accessible through settings</li>
+<li>✅ <b>Smart Device Messages</b> - User-friendly device names improve readability</li>
 <li>✅ <b>Signal Blocking</b> - Fixed auto-refresh causing unwanted device operations</li>
-<li>✅ <b>State Persistence</b> - Auto-reconnect settings survive all UI updates and theme changes</li>
-<li>✅ <b>Theme Consistency</b> - All dialogs and components respect selected theme</li>
-<li>✅ <b>Unified Storage</b> - Eliminated duplicate storage methods for consistent data handling</li>
-<li>✅ <b>Enhanced Reliability</b> - Comprehensive error prevention and robust state management</li>
+<li>✅ <b>State Persistence</b> - All settings survive UI updates and theme changes</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🔗 Source Code & Updates:</h3>

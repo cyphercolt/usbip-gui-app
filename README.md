@@ -48,6 +48,15 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 - **✅ Optimized state management** - Unified storage system with proper encryption
 - **✅ Robust error prevention** - Signal blocking prevents accidental device operations
 
+### 🎮 Gaming & Performance Features
+- **🏓 Real-time ping monitoring** - Live latency display with gaming-focused color coding
+- **🟢 Gaming latency indicators** - Green (≤50ms), Yellow (100-150ms), Red (>300ms) for optimal gaming experience
+- **🛡️ Safe IP management** - Dedicated IP management dialog prevents connection hangs
+- **⏱️ Timeout protection** - 15-second timeouts prevent hanging on unresponsive servers
+- **💬 Enhanced console modes** - Verbose console for detailed output, simple mode for clean user experience
+- **🔍 Debug mode** - Hidden developer tools for troubleshooting and advanced users
+- **📝 Smart device messaging** - User-friendly device names instead of technical bus IDs
+
 ## 📋 Requirements
 
 - **Python 3.8+**
@@ -339,6 +348,22 @@ sudo systemctl status usbipd
 ```
 
 ### Interface & Theme Issues
+- **"Ping shows red constantly"** - Check IP address validity, network connectivity, or firewall settings
+
+- **"App hangs when adding IP"** - Use 'Manage IPs' dialog instead of directly connecting to untested IPs
+
+- **"Verbose console not showing"** - Enable 'Verbose Console' checkbox in Settings dialog
+
+- **"Debug mode not persisting"** - Fixed in v2.1.0; debug mode now properly saves state
+
+- **"Connection timeouts"** - All operations now have 15-second timeouts to prevent hanging
+
+### Gaming & Performance Issues
+- **"High ping showing green"** - Color thresholds are gaming-focused: Green ≤50ms, Yellow 100-150ms, Red >300ms
+
+- **"Commands taking too long"** - Timeout protection prevents hanging; operations auto-cancel after 15 seconds
+
+- **"Console too cluttered"** - Disable 'Verbose Console' in settings for clean, simple messages only
 - **"Refresh causing devices to unbind"** - ✅ **FIXED** - Smart signal handling prevents unwanted operations
 
 - **"Auto-reconnect settings lost after refresh"** - ✅ **FIXED** - Enhanced state persistence system

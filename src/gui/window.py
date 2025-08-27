@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLa
                              QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
                              QMessageBox, QInputDialog, QTextEdit, QCheckBox, QLineEdit,
                              QSplitter, QHeaderView, QSpinBox, QGroupBox, QFormLayout,
-                             QScrollArea, QDialogButtonBox)
+                             QScrollArea, QDialogButtonBox, QDialog)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QPalette, QMovie
 import subprocess
@@ -19,6 +19,7 @@ from gui.widgets.toggle_button import ToggleButton
 from gui.dialogs.about_dialog import AboutDialog
 from gui.dialogs.help_dialog import HelpDialog
 from gui.dialogs.settings_dialog import SettingsDialog
+from gui.dialogs.ip_management_dialog import IPManagementDialog
 from gui.controllers.auto_reconnect_controller import AutoReconnectController
 from gui.controllers.device_management_controller import DeviceManagementController
 from gui.controllers.ssh_management_controller import SSHManagementController
@@ -61,23 +62,75 @@ class MainWindow(QMainWindow):
         self.layout = QVBoxLayout()
         self.central_widget.setLayout(self.layout)
 
+        # IP input section with ping status indicator
+        ip_section = QHBoxLayout()
+        ip_section.addWidget(QLabel("IP Address/Hostname:"))
+        
+        # Ping status indicator
+        self.ping_status_widget = QWidget()
+        ping_status_layout = QHBoxLayout()
+        ping_status_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.ping_status_indicator = QLabel("●")
+        self.ping_status_indicator.setStyleSheet("color: gray; font-size: 14px; font-weight: bold;")
+        self.ping_status_label = QLabel("Unknown")
+        self.ping_status_label.setStyleSheet("color: gray; font-size: 12px;")
+        
+        ping_status_layout.addWidget(self.ping_status_indicator)
+        ping_status_layout.addWidget(self.ping_status_label)
+        ping_status_layout.addStretch()
+        self.ping_status_widget.setLayout(ping_status_layout)
+        
+        ip_section.addWidget(self.ping_status_widget)
+        ip_section.addStretch()
+        self.layout.addLayout(ip_section)
+
         self.ip_input = QComboBox()
-        self.layout.addWidget(QLabel("IP Address/Hostname:"))
         self.layout.addWidget(self.ip_input)
-        self.ip_input.currentIndexChanged.connect(self.load_devices)
+        self.ip_input.currentIndexChanged.connect(self.on_ip_changed)
 
         btn_layout = QHBoxLayout()
-        self.add_button = QPushButton("Add")
-        self.add_button.clicked.connect(self.add_ip)
-        btn_layout.addWidget(self.add_button)
-
-        self.remove_button = QPushButton("Remove")
-        self.remove_button.clicked.connect(self.remove_ip)
-        btn_layout.addWidget(self.remove_button)
+        
+        self.manage_ips_button = QPushButton("Manage IPs")
+        self.manage_ips_button.clicked.connect(self.show_ip_management)
+        self.manage_ips_button.setStyleSheet("""
+            QPushButton {
+                background-color: #FF9800;
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #F57C00;
+            }
+        """)
+        btn_layout.addWidget(self.manage_ips_button)
 
         self.ping_button = QPushButton("Ping")
         self.ping_button.clicked.connect(self.ping_ip)
         btn_layout.addWidget(self.ping_button)
+        
+        # Add test ping colors button for demonstration
+        self.test_colors_button = QPushButton("Test Colors")
+        self.test_colors_button.clicked.connect(self.test_ping_colors)
+        self.test_colors_button.setStyleSheet("""
+            QPushButton {
+                background-color: #9C27B0;
+                color: white;
+                border: none;
+                padding: 6px 12px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #7B1FA2;
+            }
+        """)
+        self.test_colors_button.setToolTip("Cycle through different ping latency colors for testing")
+        self.test_colors_button.setVisible(False)  # Hidden by default, shown in debug mode
+        btn_layout.addWidget(self.test_colors_button)
 
         self.refresh_button = QPushButton("Refresh")
         self.refresh_button.clicked.connect(self.refresh_all_tables)
@@ -101,10 +154,24 @@ class MainWindow(QMainWindow):
         self.auto_reconnect_enabled = True
         self.auto_reconnect_grace_period = False  # Flag to pause auto-reconnect temporarily
 
+        # Console verbosity settings
+        self.verbose_console = False  # Default to simple console mode
+        self.console_messages = []  # Store all messages (both simple and verbose)
+        self.simple_messages = []   # Store only simple messages for non-verbose mode
+        
+        # Debug mode settings
+        self.debug_mode = False  # Default to disabled
+
         # Auto-reconnect settings button
         self.auto_settings_button = QPushButton("Settings")
         self.auto_settings_button.clicked.connect(self.show_auto_reconnect_settings)
         btn_layout.addWidget(self.auto_settings_button)
+
+        # Initialize ping status timer for periodic updates
+        self.ping_status_timer = QTimer()
+        self.ping_status_timer.timeout.connect(self.auto_ping_status)
+        self.ping_status_timer.setInterval(30000)  # Ping every 30 seconds
+        # Timer will start when an IP is selected
 
         self.layout.addLayout(btn_layout)
 
@@ -240,7 +307,11 @@ class MainWindow(QMainWindow):
         self.layout.addLayout(exit_layout)
 
         self.load_ips()
-        self.load_devices()
+        # Don't auto-load devices on startup to prevent hanging
+        # User can click Refresh to load devices when ready
+        
+        # Trigger initial ping if an IP is already selected
+        self.check_initial_ping()
         
         # Initialize auto-reconnect system
         self.auto_reconnect_interval = 30  # seconds
@@ -251,6 +322,9 @@ class MainWindow(QMainWindow):
         # Initialize auto-refresh system
         self.auto_refresh_enabled = False
         self.auto_refresh_interval = 60  # seconds
+        
+        # Show welcome message with color guide
+        self.show_welcome_message()
         
         # Initialize theme system
         self.theme_manager = ThemeManager()
@@ -281,26 +355,28 @@ class MainWindow(QMainWindow):
         
         # Clear console after initial loading and show clean welcome message
         self.console.clear()
-        self.show_welcome_instructions()
+        self.show_welcome_message()
 
-    def show_welcome_instructions(self):
+    def show_welcome_message(self):
         """Show helpful instructions in the console on startup"""
-        self.console.append("🚀 Welcome to USBIP GUI Application!")
-        self.console.append("")
-        self.console.append("Quick Start Instructions:")
-        self.console.append("• Add an IP / Hostname")
-        self.console.append("• Use SSH Devices to start connection")
-        self.console.append("• IPD Reset refreshes the USBIP Daemon on the remote if needed")
-        self.console.append("")
-        self.console.append("✨ NEW: Auto-Reconnect & Auto-Refresh Features")
-        self.console.append(f"• Auto-reconnect {'enabled' if self.auto_reconnect_enabled else 'disabled'} every {self.auto_reconnect_interval} seconds")
-        self.console.append("• Use 'Auto' column to enable per-device auto-reconnect")
-        self.console.append("• Works for both ATTACH (local) and BIND (remote) operations")
-        self.console.append("• Use 'Settings' to customize timing and enable/disable features")
-        self.console.append("")
-        self.console.append("Ready for device management!")
-        self.console.append("=" * 50)
-        self.console.append("")
+        self.append_simple_message("🚀 Welcome to USBIP GUI Application!")
+        self.append_simple_message("")
+        self.append_simple_message("Quick Start Instructions:")
+        self.append_simple_message("• Use 'Manage IPs' to safely add IP addresses")
+        self.append_simple_message("• Select an IP from dropdown (pings automatically)")
+        self.append_simple_message("• Click 'Refresh' to load devices when ready")
+        self.append_simple_message("• Use 'SSH Devices' to start connection")
+        self.append_simple_message("")
+        self.append_simple_message("💡 TIP: Check 'Help' for ping status colors and detailed guides")
+        self.append_simple_message("")
+        self.append_simple_message("✨ Auto-Reconnect & Auto-Refresh Features:")
+        self.append_simple_message(f"• Auto-reconnect {'enabled' if self.auto_reconnect_enabled else 'disabled'} every {self.auto_reconnect_interval} seconds")
+        self.append_simple_message("• Use 'Auto' column to enable per-device auto-reconnect")
+        self.append_simple_message("• Use 'Settings' to customize timing and enable/disable features")
+        self.append_simple_message("")
+        self.append_simple_message("Ready for device management!")
+        self.append_simple_message("=" * 50)
+        self.append_simple_message("")
 
     def create_table_item_with_tooltip(self, text):
         """Create a QTableWidgetItem with tooltip for long text"""
@@ -320,6 +396,156 @@ class MainWindow(QMainWindow):
     def unbind_all_devices(self):
         """Unbind all bound devices on the remote SSH server (delegate to controller)"""
         self.device_management_controller.unbind_all_devices()
+
+    def on_ip_changed(self):
+        """Handle IP address change - ping immediately but don't auto-load devices"""
+        # Clear device table when IP changes to prevent confusion
+        self.device_table.setRowCount(0)
+        
+        # Reset ping status when IP changes
+        ip = self.ip_input.currentText()
+        if ip:
+            self.update_ping_status("unknown")
+            # Ping immediately when IP changes
+            if SecurityValidator.validate_ip_or_hostname(ip):
+                self.ping_current_ip()
+                self.ping_status_timer.start()
+            else:
+                self.ping_status_timer.stop()
+        else:
+            self.update_ping_status("unknown")
+            self.ping_status_timer.stop()
+        
+        # Show message that devices need to be loaded manually
+        if ip:
+            self.append_simple_message(f"📋 IP changed to {ip}. Click 'Refresh' to load devices safely.")
+    
+    def check_initial_ping(self):
+        """Check if we should ping immediately on startup"""
+        ip = self.ip_input.currentText()
+        if ip and SecurityValidator.validate_ip_or_hostname(ip):
+            # Ping immediately on startup if we have a valid IP
+            self.ping_current_ip()
+            self.ping_status_timer.start()
+    
+    def ping_current_ip(self):
+        """Ping the currently selected IP (used for immediate pings)"""
+        ip = self.ip_input.currentText()
+        if not ip:
+            return
+        
+        # Validate IP before using in command
+        if not SecurityValidator.validate_ip_or_hostname(ip):
+            return
+        
+        # Update status to pinging
+        self.update_ping_status("pinging")
+            
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "5", ip],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10
+            )
+            output = result.stdout if result.returncode == 0 else result.stderr
+            self.append_verbose_message(f"$ ping -c 1 -W 5 {ip}\n{output}\n")
+            
+            if result.returncode == 0:
+                # Extract latency from ping output
+                latency = self.extract_ping_latency(result.stdout)
+                if latency:
+                    self.append_simple_message(f"✅ Ping to {ip} successful ({latency}ms)")
+                    self.update_ping_status("success", latency, ip)
+                else:
+                    self.append_simple_message(f"✅ Ping to {ip} successful")
+                    self.update_ping_status("success", None, ip)
+            else:
+                self.append_simple_message(f"❌ Ping to {ip} failed")
+                self.update_ping_status("failed")
+        except subprocess.TimeoutExpired:
+            self.append_simple_message(f"⏱️ Ping to {ip} timed out")
+            self.append_verbose_message(f"Ping to {ip} timed out.\n")
+            self.update_ping_status("timeout")
+        except Exception as e:
+            self.append_simple_message(f"❌ Error pinging {ip}: Connection failed")
+            self.update_ping_status("failed")
+            self.append_verbose_message(f"Error pinging {ip}: {str(e)}\n")
+
+    def test_ping_colors(self):
+        """Test different ping latency colors by cycling through simulated values"""
+        ip = self.ip_input.currentText()
+        if not ip:
+            ip = "demo.example.com"
+        
+        # Initialize or get current test state
+        if not hasattr(self, '_color_test_state'):
+            self._color_test_state = 0
+        
+        test_scenarios = [
+            # (latency, description, status)
+            ("15.2", "Excellent - Perfect for gaming", "success"),
+            ("75.8", "Good - Great for most games", "success"), 
+            ("125.4", "Fair - OK for casual gaming", "success"),
+            ("220.7", "High - Poor for gaming", "success"),
+            ("450.3", "Very High - Unplayable", "success"),
+            (None, "Failed - No connection", "failed"),
+            (None, "Timeout - Connection timeout", "timeout"),
+            (None, "Checking - Testing connection", "pinging"),
+            (None, "Unknown - No status", "unknown")
+        ]
+        
+        scenario = test_scenarios[self._color_test_state]
+        latency, description, status = scenario
+        
+        # Update ping status with test scenario
+        self.update_ping_status(status, latency, ip)
+        
+        # Show message in console
+        if latency:
+            self.append_simple_message(f"🎨 Test: {description} ({latency}ms)")
+        else:
+            self.append_simple_message(f"🎨 Test: {description}")
+        
+        # Advance to next test state
+        self._color_test_state = (self._color_test_state + 1) % len(test_scenarios)
+        
+        # Show helpful info about current colors
+        if self._color_test_state == 0:
+            self.append_simple_message("🔄 Color test cycle complete! Click 'Test Colors' again to repeat.")
+
+    def apply_debug_mode(self):
+        """Apply debug mode settings - show/hide debug tools"""
+        # Show/hide test colors button based on debug mode
+        self.test_colors_button.setVisible(self.debug_mode)
+        
+        # Future debug tools can be added here
+        # Example: self.debug_panel.setVisible(self.debug_mode)
+
+    def auto_ping_status(self):
+        """Automatically ping the current IP to update status (silent mode)"""
+        ip = self.ip_input.currentText()
+        if not ip or not SecurityValidator.validate_ip_or_hostname(ip):
+            return
+            
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "3", ip],  # Shorter timeout for auto-ping
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=5  # Shorter process timeout
+            )
+            
+            if result.returncode == 0:
+                # Extract latency from ping output
+                latency = self.extract_ping_latency(result.stdout)
+                self.update_ping_status("success", latency, ip)
+            else:
+                self.update_ping_status("failed")
+        except (subprocess.TimeoutExpired, Exception):
+            self.update_ping_status("timeout")
 
     def load_devices(self):
         """Load and display USB/IP devices from remote server (delegate to controller)"""
@@ -355,28 +581,102 @@ class MainWindow(QMainWindow):
         """Save IP addresses (delegate to data persistence controller)"""
         self.data_persistence_controller.save_ips()
 
-    def add_ip(self):
-        text, ok = QInputDialog.getText(self, "Add IP/Hostname", "Enter IP address or hostname:")
-        if ok and text:
-            # Validate the IP/hostname format
-            if not SecurityValidator.validate_ip_or_hostname(text):
-                self.show_error("Invalid IP address or hostname format.")
-                return
-            
-            # Check for duplicates
-            existing_ips = [self.ip_input.itemText(i) for i in range(self.ip_input.count())]
-            if text not in existing_ips:
-                self.ip_input.addItem(text)
+    def show_ip_management(self):
+        """Show the IP Management dialog"""
+        # Get current IPs from the combo box
+        current_ips = [self.ip_input.itemText(i) for i in range(self.ip_input.count())]
+        current_selection = self.ip_input.currentText()
+        
+        # Show the IP management dialog
+        dialog = IPManagementDialog(self, current_ips)
+        
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            if dialog.has_changes():
+                # Update the combo box with new IPs
+                new_ips = dialog.get_ips()
+                
+                # Clear and repopulate the combo box
+                self.ip_input.clear()
+                for ip in new_ips:
+                    self.ip_input.addItem(ip)
+                
+                # Try to restore the previous selection, or select first item
+                if current_selection in new_ips:
+                    index = self.ip_input.findText(current_selection)
+                    if index >= 0:
+                        self.ip_input.setCurrentIndex(index)
+                elif new_ips:
+                    self.ip_input.setCurrentIndex(0)
+                
+                # Save the updated IPs
                 self.save_ips()
-            else:
-                self.show_error("IP/hostname already exists in the list.")
+                
+                # Clear device table since IP list changed
+                self.device_table.setRowCount(0)
+                
+                # Show success message
+                self.append_simple_message("✅ IP addresses updated successfully")
 
-    def remove_ip(self):
-        current_index = self.ip_input.currentIndex()
-        if current_index >= 0:
-            self.ip_input.removeItem(current_index)
-            self.save_ips()
-            self.device_table.setRowCount(0)
+    def extract_ping_latency(self, ping_output):
+        """Extract latency value from ping output"""
+        import re
+        # Look for patterns like "time=8.90 ms" or "time=8.9 ms"
+        match = re.search(r'time=(\d+\.?\d*)\s*ms', ping_output)
+        if match:
+            try:
+                latency = float(match.group(1))
+                # Format to one decimal place for consistency
+                return f"{latency:.1f}"
+            except ValueError:
+                return None
+        return None
+
+    def update_ping_status(self, status, latency=None, ip=None):
+        """Update the ping status indicator with latency-based color coding"""
+        if status == "success":
+            if latency:
+                latency_float = float(latency)
+                # Gaming-focused latency thresholds
+                if latency_float <= 50:  # Excellent for gaming
+                    color = "#00ff00"  # Green
+                    status_text = "Excellent"
+                elif latency_float <= 100:  # Good for most gaming
+                    color = "#7fff00"  # Light green
+                    status_text = "Good"
+                elif latency_float <= 150:  # Acceptable for casual gaming
+                    color = "#ffff00"  # Yellow
+                    status_text = "Fair"
+                elif latency_float <= 300:  # High latency - poor for gaming
+                    color = "#ffaa00"  # Orange
+                    status_text = "High"
+                else:  # Very high latency - unplayable
+                    color = "#ff4444"  # Red
+                    status_text = "Very High"
+                
+                self.ping_status_indicator.setStyleSheet(f"color: {color}; font-size: 14px; font-weight: bold;")
+                self.ping_status_label.setText(f"{status_text} ({latency}ms)")
+                self.ping_status_label.setStyleSheet(f"color: {color}; font-size: 12px;")
+            else:
+                # No latency info - default green
+                self.ping_status_indicator.setStyleSheet("color: #00ff00; font-size: 14px; font-weight: bold;")
+                self.ping_status_label.setText("Online")
+                self.ping_status_label.setStyleSheet("color: #00ff00; font-size: 12px;")
+        elif status == "failed":
+            self.ping_status_indicator.setStyleSheet("color: #ff4444; font-size: 14px; font-weight: bold;")
+            self.ping_status_label.setText("Offline")
+            self.ping_status_label.setStyleSheet("color: #ff4444; font-size: 12px;")
+        elif status == "timeout":
+            self.ping_status_indicator.setStyleSheet("color: #ff4444; font-size: 14px; font-weight: bold;")
+            self.ping_status_label.setText("Timeout")
+            self.ping_status_label.setStyleSheet("color: #ff4444; font-size: 12px;")
+        elif status == "pinging":
+            self.ping_status_indicator.setStyleSheet("color: #0099ff; font-size: 14px; font-weight: bold;")
+            self.ping_status_label.setText("Checking...")
+            self.ping_status_label.setStyleSheet("color: #0099ff; font-size: 12px;")
+        else:  # unknown
+            self.ping_status_indicator.setStyleSheet("color: gray; font-size: 14px; font-weight: bold;")
+            self.ping_status_label.setText("Unknown")
+            self.ping_status_label.setStyleSheet("color: gray; font-size: 12px;")
 
     def ping_ip(self):
         ip = self.ip_input.currentText()
@@ -388,6 +688,9 @@ class MainWindow(QMainWindow):
         if not SecurityValidator.validate_ip_or_hostname(ip):
             self.show_error("Invalid IP/hostname format.")
             return
+        
+        # Update status to pinging
+        self.update_ping_status("pinging")
             
         try:
             result = subprocess.run(
@@ -398,11 +701,28 @@ class MainWindow(QMainWindow):
                 timeout=10  # Process timeout
             )
             output = result.stdout if result.returncode == 0 else result.stderr
-            self.console.append(f"$ ping -c 1 -W 5 {ip}\n{output}\n")
+            self.append_verbose_message(f"$ ping -c 1 -W 5 {ip}\n{output}\n")
+            
+            if result.returncode == 0:
+                # Extract latency from ping output
+                latency = self.extract_ping_latency(result.stdout)
+                if latency:
+                    self.append_simple_message(f"✅ Ping to {ip} successful ({latency}ms)")
+                    self.update_ping_status("success", latency, ip)
+                else:
+                    self.append_simple_message(f"✅ Ping to {ip} successful")
+                    self.update_ping_status("success", None, ip)
+            else:
+                self.append_simple_message(f"❌ Ping to {ip} failed")
+                self.update_ping_status("failed")
         except subprocess.TimeoutExpired:
-            self.console.append(f"Ping to {ip} timed out.\n")
+            self.append_simple_message(f"⏱️ Ping to {ip} timed out")
+            self.append_verbose_message(f"Ping to {ip} timed out.\n")
+            self.update_ping_status("timeout")
         except Exception as e:
-            self.console.append(f"Error pinging {ip}: Connection failed\n")
+            self.append_simple_message(f"❌ Error pinging {ip}: Connection failed")
+            self.update_ping_status("failed")
+            self.append_verbose_message(f"Error pinging {ip}: {str(e)}\n")
 
     def _get_sudo_password(self):
         """Get the deobfuscated sudo password"""
@@ -421,7 +741,7 @@ class MainWindow(QMainWindow):
     def run_sudo(self, cmd):
         sudo_password = self._get_sudo_password()
         if not sudo_password:
-            self.console.append("No sudo password set.\n")
+            self.append_simple_message("❌ No sudo password set")
             return None
         try:
             proc = subprocess.run(
@@ -440,9 +760,9 @@ class MainWindow(QMainWindow):
             stderr_filtered = self.filter_sudo_prompts(proc.stderr)
             
             if stdout_filtered:
-                self.console.append(f"{stdout_filtered}\n")
+                self.append_verbose_message(f"{stdout_filtered}\n")
             if stderr_filtered:
-                self.console.append(f"{stderr_filtered}\n")
+                self.append_verbose_message(f"{stderr_filtered}\n")
             return proc
         except Exception as e:
             self.console.append(f"Exception running sudo: {e}\n")
@@ -466,9 +786,39 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "Error", message)
 
     def clear_console(self):
-        """Clear the console output"""
+        """Clear the console output and stored messages"""
         self.console.clear()
+        self.console_messages.clear()
+        self.simple_messages.clear()
         self.console.append("Console cleared.\n")
+
+    def append_simple_message(self, message):
+        """Add a simple message that's always shown"""
+        self.simple_messages.append(message)
+        self.console_messages.append(('simple', message))
+        self.console.append(message)  # Simple messages always show
+
+    def append_verbose_message(self, message):
+        """Add a verbose message that's only shown in verbose mode"""
+        self.console_messages.append(('verbose', message))
+        if self.verbose_console:
+            self.console.append(message)
+
+    def toggle_verbose_console(self, enabled):
+        """Toggle between simple and verbose console modes"""
+        self.verbose_console = enabled
+        
+        # Clear and rebuild console based on mode
+        self.console.clear()
+        
+        if enabled:
+            # Show all messages (simple and verbose)
+            for msg_type, message in self.console_messages:
+                self.console.append(message)
+        else:
+            # Show only simple messages
+            for message in self.simple_messages:
+                self.console.append(message)
 
     # Auto-reconnect functionality
     def load_auto_reconnect_settings(self):
@@ -520,13 +870,13 @@ class MainWindow(QMainWindow):
         
         self.auto_reconnect_grace_period = True
         self.grace_period_timer.start(duration_seconds * 1000)  # Convert to milliseconds
-        self.console.append(f"⏸️ Auto-reconnect paused for {duration_seconds} seconds after manual operation")
+        self.append_simple_message(f"⏸️ Auto-reconnect paused for {duration_seconds} seconds after manual operation")
 
     def end_grace_period(self):
         """End the grace period and resume auto-reconnect"""
         self.auto_reconnect_grace_period = False
         if self.auto_reconnect_enabled:
-            self.console.append("▶️ Auto-reconnect resumed after grace period")
+            self.append_simple_message("▶️ Auto-reconnect resumed after grace period")
 
     def show_auto_reconnect_settings(self):
         """Show settings dialog for auto-reconnect, auto-refresh, and theme configuration"""
@@ -538,6 +888,8 @@ class MainWindow(QMainWindow):
             'auto_refresh_enabled': self.auto_refresh_enabled,
             'auto_refresh_interval': self.auto_refresh_interval,
             'theme_setting': self.theme_setting,
+            'verbose_console': getattr(self, 'verbose_console', False),
+            'debug_mode': getattr(self, 'debug_mode', False),
         }
         
         colors = self.get_theme_colors()
@@ -757,9 +1109,9 @@ class MainWindow(QMainWindow):
         """Load remote devices via SSH (delegate to SSH controller)"""
         self.ssh_management_controller.load_remote_local_devices(username, password, accept_fingerprint)
 
-    def toggle_bind_remote(self, ip, username, password, busid, accept_fingerprint, state):
+    def toggle_bind_remote(self, ip, username, password, busid, desc, accept_fingerprint, state):
         """Toggle remote device binding (delegate to SSH controller)"""
-        self.ssh_management_controller.toggle_bind_remote(ip, username, password, busid, accept_fingerprint, state)
+        self.ssh_management_controller.toggle_bind_remote(ip, username, password, busid, desc, accept_fingerprint, state)
 
     def parse_ssh_usbip_list(self, output):
         """Parse SSH usbip list output (delegate to SSH controller)"""
@@ -796,7 +1148,7 @@ class MainWindow(QMainWindow):
         password = getattr(self, "last_ssh_password", "")
         accept = getattr(self, "last_ssh_accept", False)
         if not ip or not username or not password:
-            self.console.append("Missing SSH credentials for IPD Reset.\n")
+            self.append_simple_message("❌ Missing SSH credentials for IPD Reset")
             return
         try:
             client = paramiko.SSHClient()
@@ -816,9 +1168,9 @@ class MainWindow(QMainWindow):
             safe_cmd = "echo [HIDDEN] | sudo -S systemctl restart usbipd"
             stdin, stdout, stderr = client.exec_command(actual_cmd)
             output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-            self.console.append(f"SSH $ {safe_cmd}\n")
+            self.append_verbose_message(f"SSH $ {safe_cmd}\n")
             if output:
-                self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
+                self.append_verbose_message(f"{SecurityValidator.sanitize_console_output(output)}\n")
                 
             # Show status after restart
             actual_status_cmd = SecureCommandBuilder.build_systemctl_command("status", "usbipd", password)
@@ -826,9 +1178,9 @@ class MainWindow(QMainWindow):
                 safe_status_cmd = "echo [HIDDEN] | sudo -S systemctl status usbipd"
                 stdin, stdout, stderr = client.exec_command(actual_status_cmd)
                 status_output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-                self.console.append(f"SSH $ {safe_status_cmd}\n")
+                self.append_verbose_message(f"SSH $ {safe_status_cmd}\n")
                 if status_output:
-                    self.console.append(f"{SecurityValidator.sanitize_console_output(status_output)}\n")
+                    self.append_verbose_message(f"{SecurityValidator.sanitize_console_output(status_output)}\n")
             client.close()
         except Exception as e:
             self.console.append(f"Error restarting usbipd: Connection or authentication failed\n")

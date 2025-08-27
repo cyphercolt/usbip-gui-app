@@ -48,6 +48,12 @@ class SettingsDialog(QDialog):
         # Theme Group
         self.create_theme_group(layout)
         
+        # Console Group
+        self.create_console_group(layout)
+        
+        # Debug Group
+        self.create_debug_group(layout)
+        
         # Dialog buttons
         self.create_buttons(layout)
         
@@ -142,6 +148,48 @@ class SettingsDialog(QDialog):
         
         main_layout.addWidget(theme_group)
         
+    def create_console_group(self, main_layout):
+        """Create the console settings group."""
+        console_group = QGroupBox("Console Settings")
+        console_layout = QFormLayout(console_group)
+        
+        # Verbose console checkbox
+        self.verbose_console_input = QCheckBox()
+        self.verbose_console_input.setChecked(self.initial_settings.get('verbose_console', False))
+        console_layout.addRow("Verbose Console:", self.verbose_console_input)
+        
+        # Console info label
+        console_info_label = QLabel(
+            "Enable to show detailed SSH commands and raw output. "
+            "Disable for clean, emoji-enhanced messages only."
+        )
+        console_info_label.setWordWrap(True)
+        console_info_label.setStyleSheet("color: #666; font-style: italic; margin: 10px 0;")
+        console_layout.addRow(console_info_label)
+        
+        main_layout.addWidget(console_group)
+        
+    def create_debug_group(self, main_layout):
+        """Create the debug settings group."""
+        debug_group = QGroupBox("Debug & Development")
+        debug_layout = QFormLayout(debug_group)
+        
+        # Debug mode checkbox
+        self.debug_mode_input = QCheckBox()
+        self.debug_mode_input.setChecked(self.initial_settings.get('debug_mode', False))
+        debug_layout.addRow("Debug Mode:", self.debug_mode_input)
+        
+        # Debug info label
+        debug_info_label = QLabel(
+            "Enable to show debug tools like 'Test Colors' button and other development features. "
+            "This is intended for testing and development purposes."
+        )
+        debug_info_label.setWordWrap(True)
+        debug_info_label.setStyleSheet("color: #666; font-style: italic; margin: 10px 0;")
+        debug_layout.addRow(debug_info_label)
+        
+        main_layout.addWidget(debug_group)
+        
     def create_buttons(self, main_layout):
         """Create dialog buttons."""
         self.buttons = QDialogButtonBox(
@@ -166,6 +214,8 @@ class SettingsDialog(QDialog):
             'auto_refresh_enabled': self.refresh_enabled_input.isChecked(),
             'auto_refresh_interval': self.refresh_interval_input.value(),
             'theme_setting': self.theme_input.currentText(),
+            'verbose_console': self.verbose_console_input.isChecked(),
+            'debug_mode': self.debug_mode_input.isChecked(),
         }
         
     def apply_settings(self):
@@ -179,6 +229,8 @@ class SettingsDialog(QDialog):
             'auto_refresh_enabled': self.parent_window.auto_refresh_enabled,
             'auto_refresh_interval': self.parent_window.auto_refresh_interval,
             'theme_setting': self.parent_window.theme_setting,
+            'verbose_console': getattr(self.parent_window, 'verbose_console', False),
+            'debug_mode': getattr(self.parent_window, 'debug_mode', False),
         }
         
         # Update parent window settings
@@ -190,22 +242,36 @@ class SettingsDialog(QDialog):
         self.parent_window.auto_refresh_interval = new_settings['auto_refresh_interval']
         self.parent_window.theme_setting = new_settings['theme_setting']
         
+        # Handle verbose console changes
+        if old_settings['verbose_console'] != new_settings['verbose_console']:
+            self.parent_window.toggle_verbose_console(new_settings['verbose_console'])
+            mode = "verbose" if new_settings['verbose_console'] else "simple"
+            self.parent_window.append_simple_message(f"🔧 Console mode changed to: {mode}")
+        
+        # Handle debug mode changes
+        old_debug_mode = getattr(self.parent_window, 'debug_mode', False)
+        if old_debug_mode != new_settings['debug_mode']:
+            self.parent_window.debug_mode = new_settings['debug_mode']
+            self.parent_window.apply_debug_mode()
+            mode = "enabled" if new_settings['debug_mode'] else "disabled"
+            self.parent_window.append_simple_message(f"🐛 Debug mode {mode}")
+        
         # Save settings
         self.parent_window.save_auto_reconnect_settings()
         
         # Apply theme if changed
         if old_settings['theme_setting'] != new_settings['theme_setting']:
             self.parent_window.apply_theme()
-            self.parent_window.console.append(f"🎨 Theme changed to: {new_settings['theme_setting']}")
+            self.parent_window.append_simple_message(f"🎨 Theme changed to: {new_settings['theme_setting']}")
             # Update this dialog's theme immediately
             self.refresh_dialog_theme()
         
         # Handle auto-reconnect enable/disable
         if old_settings['auto_reconnect_enabled'] != new_settings['auto_reconnect_enabled']:
             if new_settings['auto_reconnect_enabled']:
-                self.parent_window.console.append("▶️ Auto-reconnect enabled")
+                self.parent_window.append_simple_message("▶️ Auto-reconnect enabled")
             else:
-                self.parent_window.console.append("⏸️ Auto-reconnect disabled")
+                self.parent_window.append_simple_message("⏸️ Auto-reconnect disabled")
         
         # Restart auto-reconnect timer if interval changed
         if old_settings['auto_reconnect_interval'] != new_settings['auto_reconnect_interval']:
