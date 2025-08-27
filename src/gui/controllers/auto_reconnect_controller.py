@@ -182,7 +182,10 @@ class AutoReconnectController(QObject):
             toggle_btn = self.main_window.device_table.cellWidget(row, 2)
             
             if busid_item and busid_item.text() == busid and toggle_btn:
+                # Block signals to prevent triggering bind/unbind operations
+                toggle_btn.blockSignals(True)
                 toggle_btn.setChecked(attached)
+                toggle_btn.blockSignals(False)
                 break
 
     def update_remote_toggle_state(self, busid, bound):
@@ -191,7 +194,10 @@ class AutoReconnectController(QObject):
             busid_item = self.main_window.remote_table.item(row, 0)
             toggle_btn = self.main_window.remote_table.cellWidget(row, 2)
             if busid_item and busid_item.text() == busid and toggle_btn:
+                # Block signals to prevent triggering bind/unbind operations
+                toggle_btn.blockSignals(True)
                 toggle_btn.setChecked(bound)
+                toggle_btn.blockSignals(False)
                 break
 
     def update_auto_toggle_state(self, busid, enabled):
@@ -200,7 +206,10 @@ class AutoReconnectController(QObject):
             busid_item = self.main_window.device_table.item(row, 0)
             auto_btn = self.main_window.device_table.cellWidget(row, 3)
             if busid_item and busid_item.text() == busid and auto_btn:
+                # Block signals to prevent triggering auto-reconnect changes
+                auto_btn.blockSignals(True)
                 auto_btn.setChecked(enabled)
+                auto_btn.blockSignals(False)
                 break
 
     def update_remote_auto_toggle_state(self, busid, enabled):
@@ -209,5 +218,8 @@ class AutoReconnectController(QObject):
             busid_item = self.main_window.remote_table.item(row, 0)
             auto_btn = self.main_window.remote_table.cellWidget(row, 3)
             if busid_item and busid_item.text() == busid and auto_btn:
+                # Block signals to prevent triggering auto-reconnect changes
+                auto_btn.blockSignals(True)
                 auto_btn.setChecked(enabled)
+                auto_btn.blockSignals(False)
                 break

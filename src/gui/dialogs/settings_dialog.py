@@ -230,6 +230,12 @@ class SettingsDialog(QDialog):
 
     def apply_theme_styling(self):
         """Apply theme styling to the dialog."""
+        # For System Theme, clear any custom styling and use system defaults
+        if self.parent_window.theme_setting == "System Theme":
+            self.setStyleSheet("")  # Clear custom stylesheet to use system defaults
+            return
+        
+        # For custom themes, apply the theme colors
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: {self.theme_colors['bg_color']};

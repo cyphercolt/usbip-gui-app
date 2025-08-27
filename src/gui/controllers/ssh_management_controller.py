@@ -81,13 +81,8 @@ class SSHManagementController:
         
         self.main_window.remote_table.setRowCount(0)
         
-        # Get attached descriptions from local device table 
-        attached_descs = set()
-        for row in range(self.main_window.device_table.rowCount()):
-            desc_item = self.main_window.device_table.item(row, 1)
-            if desc_item:
-                desc = desc_item.text()
-                attached_descs.add(desc)
+        # Load remote device states from persistent storage
+        remote_states = self.main_window.load_remote_state(ip)
         
         if not ip:
             self.main_window.console.append("No IP selected for SSH.\n")
@@ -118,9 +113,15 @@ class SSHManagementController:
                 
                 # Create toggle button for remote devices
                 toggle_btn = ToggleButton("BOUND", "UNBOUND")
-                # Check if this device is currently attached by matching descriptions
-                is_bound = dev["desc"] in attached_descs
+                # Check if this device is currently bound based on persistent state
+                is_bound = remote_states.get(dev["busid"], False)
+                
+                # Set the initial state WITHOUT triggering the signal
+                toggle_btn.blockSignals(True)
                 toggle_btn.setChecked(is_bound)
+                toggle_btn.blockSignals(False)
+                
+                # Now connect the signal handler
                 toggle_btn.toggled.connect(
                     lambda state, ip=ip, username=username, password=password, busid=dev["busid"], accept=accept_fingerprint: 
                         self.toggle_bind_remote(ip, username, password, busid, accept, 2 if state else 0)
@@ -129,7 +130,13 @@ class SSHManagementController:
                 
                 # Create auto-reconnect toggle for remote devices
                 auto_btn = ToggleButton("AUTO", "MANUAL")
+                
+                # Set the initial state WITHOUT triggering the signal
+                auto_btn.blockSignals(True)
                 auto_btn.setChecked(self.main_window.get_auto_reconnect_state(ip, dev["busid"], "remote"))
+                auto_btn.blockSignals(False)
+                
+                # Now connect the signal handler
                 auto_btn.toggled.connect(
                     lambda state, ip=ip, busid=dev["busid"]: self.main_window.toggle_auto_reconnect(ip, busid, state, "remote")
                 )
@@ -185,6 +192,18 @@ class SSHManagementController:
                 self.main_window.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
             
             client.close()
+            
+            # Save the remote bind state after successful operation
+            if state == 2:  # Bind operation
+                self.main_window.save_remote_state(ip, busid, True)
+                self.main_window.console.append(f"✓ Remote device {busid} bound and state saved\n")
+            elif state == 0:  # Unbind operation  
+                self.main_window.save_remote_state(ip, busid, False)
+                self.main_window.console.append(f"✓ Remote device {busid} unbound and state saved\n")
+            
+            # Start grace period to prevent auto-reconnect interference
+            self.main_window.start_grace_period()
+            
             self.main_window.device_management_controller.load_devices()  # Only refresh local table
         except Exception as e:
             self.main_window.console.append(f"SSH bind/unbind failed: Connection or authentication error\n")
@@ -219,6 +238,9 @@ class SSHManagementController:
             stdout.read()  # Wait for command completion
             stderr.read()
             
+            # Save the remote bind state after successful operation
+            self.main_window.save_remote_state(ip, busid, bind)
+            
             client.close()
             return True  # Assume success if no exception
         except Exception:
@@ -245,22 +267,71 @@ class SSHManagementController:
         return devices
 
     def save_remote_device_states(self):
-        """Save the current state of remote device toggle buttons"""
+        """Save the current state of remote device toggle buttons to persistent storage"""
+        ip = self.main_window.ip_input.currentText()
+        if not ip:
+            return {}
+            
         states = {}
+        saved_count = 0
         for row in range(self.main_window.remote_table.rowCount()):
             busid_item = self.main_window.remote_table.item(row, 0)
             toggle_btn = self.main_window.remote_table.cellWidget(row, 2)
-            if busid_item and toggle_btn:
-                states[busid_item.text()] = toggle_btn.isChecked()
+            auto_btn = self.main_window.remote_table.cellWidget(row, 3)
+            
+            if busid_item and toggle_btn and auto_btn:
+                busid = busid_item.text()
+                is_bound = toggle_btn.isChecked()
+                auto_enabled = auto_btn.isChecked()
+                
+                states[busid] = {'bound': is_bound, 'auto': auto_enabled}
+                
+                # Save bind state to persistent storage
+                self.main_window.save_remote_state(ip, busid, is_bound)
+                
+                # Save auto-reconnect state using the silent method (no console output)
+                self.main_window.data_persistence_controller.set_auto_reconnect_state_silent(ip, busid, auto_enabled, "remote")
+                
+                saved_count += 1
+                self.main_window.console.append(f"  Saving {busid}: bind={is_bound}, auto={auto_enabled}")
+        
+        self.main_window.console.append(f"  Saved {saved_count} device states total")
         return states
     
     def restore_remote_device_states(self, saved_states):
-        """Restore the state of remote device toggle buttons"""
+        """Restore the state of remote device toggle buttons from persistent storage"""
+        ip = self.main_window.ip_input.currentText()
+        if not ip:
+            return
+            
+        # Load from persistent storage - both bind states and auto-reconnect states
+        remote_states = self.main_window.load_remote_state(ip)
+        
+        restored_count = 0
         for row in range(self.main_window.remote_table.rowCount()):
             busid_item = self.main_window.remote_table.item(row, 0)
             toggle_btn = self.main_window.remote_table.cellWidget(row, 2)
-            if busid_item and toggle_btn and busid_item.text() in saved_states:
-                toggle_btn.setChecked(saved_states[busid_item.text()])
+            auto_btn = self.main_window.remote_table.cellWidget(row, 3)
+            
+            if busid_item and toggle_btn and auto_btn:
+                busid = busid_item.text()
+                
+                # Restore bind state
+                is_bound = remote_states.get(busid, False)
+                toggle_btn.blockSignals(True)
+                toggle_btn.setChecked(is_bound)
+                toggle_btn.blockSignals(False)
+                
+                # Restore auto-reconnect state
+                auto_enabled = self.main_window.get_auto_reconnect_state(ip, busid, "remote")
+                auto_btn.blockSignals(True)
+                auto_btn.setChecked(auto_enabled)
+                auto_btn.blockSignals(False)
+                
+                restored_count += 1
+                self.main_window.console.append(f"  Device {busid}: bind={is_bound}, auto={auto_enabled}")
+        
+        self.main_window.console.append(f"  Restored {restored_count} device states total")
 
     def load_ssh_state(self):
         """Load SSH state from encrypted file"""
@@ -302,15 +373,27 @@ class SSHManagementController:
             hasattr(self.main_window, "last_ssh_password") and 
             hasattr(self.main_window, "last_ssh_accept")):
             
-            # Save current remote device states before refresh
-            saved_remote_states = self.save_remote_device_states()
-            
-            self.load_remote_local_devices(
-                self.main_window.last_ssh_username, 
-                self.main_window.last_ssh_password, 
-                self.main_window.last_ssh_accept
-            )
-            
-            # Restore the saved states
-            if saved_remote_states:
-                self.restore_remote_device_states(saved_remote_states)
+            # Instead of saving UI state, save from persistent storage before any operations
+            ip = self.main_window.ip_input.currentText()
+            if ip:
+                # Read current states from persistent storage (not UI)
+                remote_bind_states = self.main_window.load_remote_state(ip)
+                auto_reconnect_states = {}
+                
+                # Get current device list to check what auto-reconnect states exist
+                for row in range(self.main_window.remote_table.rowCount()):
+                    busid_item = self.main_window.remote_table.item(row, 0)
+                    if busid_item:
+                        busid = busid_item.text()
+                        auto_state = self.main_window.get_auto_reconnect_state(ip, busid, "remote")
+                        auto_reconnect_states[busid] = auto_state
+                
+                # Now refresh the UI
+                self.load_remote_local_devices(
+                    self.main_window.last_ssh_username, 
+                    self.main_window.last_ssh_password, 
+                    self.main_window.last_ssh_accept
+                )
+                
+                # The load_remote_local_devices should now correctly restore from persistent storage
+                self.main_window.console.append(f"Refresh: UI refreshed with persistent state data\n")

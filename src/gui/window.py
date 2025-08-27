@@ -22,6 +22,7 @@ from gui.dialogs.settings_dialog import SettingsDialog
 from gui.controllers.auto_reconnect_controller import AutoReconnectController
 from gui.controllers.device_management_controller import DeviceManagementController
 from gui.controllers.ssh_management_controller import SSHManagementController
+from gui.controllers.data_persistence_controller import DataPersistenceController
 
 IPS_FILE = "ips.enc"
 STATE_FILE = "usbip_state.enc" 
@@ -52,6 +53,7 @@ class MainWindow(QMainWindow):
         # Initialize controllers early (before UI setup that references them)
         self.device_management_controller = DeviceManagementController(self)
         self.ssh_management_controller = SSHManagementController(self)
+        self.data_persistence_controller = DataPersistenceController(self)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -346,15 +348,12 @@ class MainWindow(QMainWindow):
         return self.memory_crypto.deobfuscate_string(self._obfuscated_sudo_password)
 
     def load_ips(self):
-        data = self.file_crypto.load_encrypted_file(IPS_FILE)
-        ips = data.get('ips', [])
-        for ip in ips:
-            self.ip_input.addItem(ip)
+        """Load IP addresses (delegate to data persistence controller)"""
+        self.data_persistence_controller.load_ips()
 
     def save_ips(self):
-        ips = [self.ip_input.itemText(i) for i in range(self.ip_input.count())]
-        data = {'ips': ips}
-        self.file_crypto.save_encrypted_file(IPS_FILE, data)
+        """Save IP addresses (delegate to data persistence controller)"""
+        self.data_persistence_controller.save_ips()
 
     def add_ip(self):
         text, ok = QInputDialog.getText(self, "Add IP/Hostname", "Enter IP address or hostname:")
@@ -450,33 +449,18 @@ class MainWindow(QMainWindow):
             return None
 
     def load_state(self, ip):
-        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
-        return all_state.get(ip, {"attached": []})
+        return self.data_persistence_controller.load_state(ip)
 
     def save_state(self, ip, busid, attached):
-        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
-        state = all_state.get(ip, {"attached": []})
-        if attached and busid not in state["attached"]:
-            state["attached"].append(busid)
-        elif not attached and busid in state["attached"]:
-            state["attached"].remove(busid)
-        all_state[ip] = state
-        self.file_crypto.save_encrypted_file(STATE_FILE, all_state)
+        self.data_persistence_controller.save_state(ip, busid, attached)
 
     def load_remote_state(self, ip):
         """Load remote device bind states for a specific IP"""
-        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
-        return all_state.get(ip, {}).get("remote_bound", {})
+        return self.data_persistence_controller.load_remote_state(ip)
 
     def save_remote_state(self, ip, busid, bound):
         """Save remote device bind state for a specific IP and busid"""
-        all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
-        state = all_state.get(ip, {"attached": [], "remote_bound": {}})
-        if "remote_bound" not in state:
-            state["remote_bound"] = {}
-        state["remote_bound"][busid] = bound
-        all_state[ip] = state
-        self.file_crypto.save_encrypted_file(STATE_FILE, all_state)
+        self.data_persistence_controller.save_remote_state(ip, busid, bound)
 
     def show_error(self, message):
         QMessageBox.critical(self, "Error", message)
@@ -489,37 +473,11 @@ class MainWindow(QMainWindow):
     # Auto-reconnect functionality
     def load_auto_reconnect_settings(self):
         """Load auto-reconnect and auto-refresh settings from encrypted file"""
-        data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
-        self.auto_reconnect_enabled = data.get('auto_reconnect_enabled', True)  # Default to enabled
-        self.auto_reconnect_interval = data.get('interval', 30)
-        self.auto_reconnect_max_attempts = data.get('max_attempts', 5)
-        self.grace_period_duration = data.get('grace_period', 60)
-        self.auto_refresh_enabled = data.get('auto_refresh_enabled', False)
-        self.auto_refresh_interval = data.get('auto_refresh_interval', 60)
-        self.theme_setting = data.get('theme_setting', 'System Theme')
-        
-        # Apply theme on startup
-        self.apply_theme()
-        
-        # Start auto-refresh timer if enabled
-        if self.auto_refresh_enabled:
-            self.auto_refresh_timer.start(self.auto_refresh_interval * 1000)
-        
-        return data.get('devices', {})
+        return self.data_persistence_controller.load_auto_reconnect_settings()
 
     def save_auto_reconnect_settings(self):
         """Save auto-reconnect and auto-refresh settings to encrypted file"""
-        data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
-        data['auto_reconnect_enabled'] = self.auto_reconnect_enabled
-        data['interval'] = self.auto_reconnect_interval
-        data['max_attempts'] = self.auto_reconnect_max_attempts
-        data['grace_period'] = self.grace_period_duration
-        data['auto_refresh_enabled'] = self.auto_refresh_enabled
-        data['auto_refresh_interval'] = self.auto_refresh_interval
-        data['theme_setting'] = self.theme_setting
-        if 'devices' not in data:
-            data['devices'] = {}
-        self.file_crypto.save_encrypted_file(AUTO_RECONNECT_FILE, data)
+        self.data_persistence_controller.save_auto_reconnect_settings()
 
     def apply_theme(self):
         """Apply the selected theme to the application"""
@@ -533,72 +491,27 @@ class MainWindow(QMainWindow):
 
     def get_auto_reconnect_state(self, ip, busid, table_type="local"):
         """Get auto-reconnect state for a specific device with table type separation"""
-        data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
-        devices = data.get('devices', {})
-        device_key = f"{table_type}:{ip}:{busid}"  # Separate by table type
-        return devices.get(device_key, False)
+        return self.data_persistence_controller.get_auto_reconnect_state(ip, busid, table_type)
 
     def toggle_auto_reconnect(self, ip, busid, enabled, table_type="local"):
         """Toggle auto-reconnect for a specific device with table type separation"""
-        data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
-        if 'devices' not in data:
-            data['devices'] = {}
-        
-        device_key = f"{table_type}:{ip}:{busid}"  # Separate by table type
-        data['devices'][device_key] = enabled
-        
-        if enabled:
-            self.console.append(f"🔄 Auto-reconnect enabled for {busid} on {ip} ({table_type})")
-            # Reset attempt counter when enabled
-            if device_key in self.auto_reconnect_attempts:
-                del self.auto_reconnect_attempts[device_key]
-        else:
-            self.console.append(f"⏹️ Auto-reconnect disabled for {busid} on {ip} ({table_type})")
-            # Remove from attempt tracking
-            if device_key in self.auto_reconnect_attempts:
-                del self.auto_reconnect_attempts[device_key]
-        
-        self.file_crypto.save_encrypted_file(AUTO_RECONNECT_FILE, data)
+        self.data_persistence_controller.toggle_auto_reconnect(ip, busid, enabled, table_type)
 
     def save_device_mapping(self, remote_busid, remote_desc, port_number, port_busid):
         """Save mapping between remote device and attached port"""
-        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
-        if 'mappings' not in data:
-            data['mappings'] = {}
-        
-        # Store mapping: remote_busid -> port info
-        data['mappings'][remote_busid] = {
-            'remote_desc': remote_desc,
-            'port_number': port_number,
-            'port_busid': port_busid,
-            'timestamp': time.time()
-        }
-        
-        self.file_crypto.save_encrypted_file(DEVICE_MAPPING_FILE, data)
-        self.console.append(f"🔗 Mapped remote device {remote_busid} to port {port_number} (busid: {port_busid})")
+        self.data_persistence_controller.save_device_mapping(remote_busid, remote_desc, port_number, port_busid)
 
     def get_device_mapping(self, remote_busid):
         """Get port mapping for a remote device"""
-        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
-        mappings = data.get('mappings', {})
-        return mappings.get(remote_busid)
+        return self.data_persistence_controller.get_device_mapping(remote_busid)
 
     def remove_device_mapping(self, remote_busid):
         """Remove mapping when device is detached"""
-        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
-        if 'mappings' in data and remote_busid in data['mappings']:
-            del data['mappings'][remote_busid]
-            self.file_crypto.save_encrypted_file(DEVICE_MAPPING_FILE, data)
-            self.console.append(f"🔗 Removed mapping for remote device {remote_busid}")
+        self.data_persistence_controller.remove_device_mapping(remote_busid)
 
     def get_remote_busid_for_port(self, port_busid):
         """Get the original remote busid for a port busid"""
-        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
-        mappings = data.get('mappings', {})
-        for remote_busid, mapping_info in mappings.items():
-            if mapping_info.get('port_busid') == port_busid:
-                return remote_busid
-        return None
+        return self.data_persistence_controller.get_remote_busid_for_port(port_busid)
 
     def start_grace_period(self, duration_seconds=None):
         """Start grace period to pause auto-reconnect after manual bulk operations"""

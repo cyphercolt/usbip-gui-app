@@ -154,11 +154,18 @@ class DeviceManagementController(QObject):
             client.close()
             self.main_window.console.append("All devices unbound successfully.\n")
             
-            # Update toggle buttons instead of refreshing entire table
+            # Update toggle buttons and save states to persistent storage
             for row in range(self.main_window.remote_table.rowCount()):
                 toggle_btn = self.main_window.remote_table.cellWidget(row, 2)
-                if toggle_btn and toggle_btn.isChecked():
+                busid_item = self.main_window.remote_table.item(row, 0)
+                if toggle_btn and toggle_btn.isChecked() and busid_item:
+                    busid = busid_item.text()
+                    # Block signals to prevent triggering bind/unbind operations
+                    toggle_btn.blockSignals(True)
                     toggle_btn.setChecked(False)  # Set to unbound state
+                    toggle_btn.blockSignals(False)
+                    # Save the unbound state to persistent storage
+                    self.main_window.save_remote_state(ip, busid, False)
             
             # Refresh only the local devices table to show available devices
             self.load_devices()
@@ -256,7 +263,13 @@ class DeviceManagementController(QObject):
             
             # Create toggle button instead of checkbox
             toggle_btn = ToggleButton("ATTACHED", "DETACHED")
+            
+            # Set initial state WITHOUT triggering signal
+            toggle_btn.blockSignals(True)
             toggle_btn.setChecked(dev["desc"] in attached_descs)
+            toggle_btn.blockSignals(False)
+            
+            # Now connect the signal handler
             toggle_btn.toggled.connect(
                 lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.toggle_attach(ip, busid, desc, 2 if state else 0)
             )
@@ -264,6 +277,9 @@ class DeviceManagementController(QObject):
             
             # Create auto-reconnect toggle button
             auto_btn = ToggleButton("AUTO", "MANUAL")
+            
+            # Set initial state WITHOUT triggering signal
+            auto_btn.blockSignals(True)
             # Use saved state if available, otherwise read from encrypted file
             if dev["busid"] in saved_auto_states:
                 auto_state = saved_auto_states[dev["busid"]]
@@ -271,6 +287,9 @@ class DeviceManagementController(QObject):
             else:
                 auto_state = self.main_window.get_auto_reconnect_state(ip, dev["busid"], "local")
                 auto_btn.setChecked(auto_state)
+            auto_btn.blockSignals(False)
+            
+            # Now connect the signal handler
             auto_btn.toggled.connect(
                 lambda state, ip=ip, busid=dev["busid"]: self.main_window.toggle_auto_reconnect(ip, busid, state, "local")
             )
@@ -305,7 +324,13 @@ class DeviceManagementController(QObject):
                     
                     # Create toggle button (attached state)
                     toggle_btn = ToggleButton("ATTACHED", "DETACHED")
+                    
+                    # Set initial state WITHOUT triggering signal
+                    toggle_btn.blockSignals(True)
                     toggle_btn.setChecked(True)  # It's attached
+                    toggle_btn.blockSignals(False)
+                    
+                    # Now connect the signal handler
                     toggle_btn.toggled.connect(
                         lambda state, ip=ip, busid=remote_busid, desc=remote_desc: self.toggle_attach(ip, busid, desc, 2 if state else 0)
                     )
@@ -313,12 +338,18 @@ class DeviceManagementController(QObject):
                     
                     # Create auto-reconnect toggle button with preserved state
                     auto_btn = ToggleButton("AUTO", "MANUAL")
+                    
+                    # Set initial state WITHOUT triggering signal
+                    auto_btn.blockSignals(True)
                     if remote_busid in saved_auto_states:
                         auto_state = saved_auto_states[remote_busid]
                         auto_btn.setChecked(auto_state)
                     else:
                         auto_state = self.main_window.get_auto_reconnect_state(ip, remote_busid, "local")
                         auto_btn.setChecked(auto_state)
+                    auto_btn.blockSignals(False)
+                    
+                    # Now connect the signal handler
                     auto_btn.toggled.connect(
                         lambda state, ip=ip, busid=remote_busid: self.main_window.toggle_auto_reconnect(ip, busid, state, "local")
                     )
@@ -368,7 +399,13 @@ class DeviceManagementController(QObject):
                     
                     # Create toggle button for local devices
                     toggle_btn = ToggleButton("ATTACHED", "DETACHED")
+                    
+                    # Set initial state WITHOUT triggering signal
+                    toggle_btn.blockSignals(True)
                     toggle_btn.setChecked(True)  # Local devices are already attached
+                    toggle_btn.blockSignals(False)
+                    
+                    # Now connect the signal handler
                     toggle_btn.toggled.connect(
                         lambda state, port=current_port, desc=desc: self.detach_local_device(port, desc, 0 if not state else 2)
                     )
@@ -378,6 +415,8 @@ class DeviceManagementController(QObject):
                     auto_btn = ToggleButton("AUTO", "MANUAL")
                     busid_for_auto = remote_busid if remote_busid else current_busid
                     
+                    # Set initial state WITHOUT triggering signal
+                    auto_btn.blockSignals(True)
                     # Use saved state if available, otherwise read from encrypted file
                     if busid_for_auto in saved_auto_states:
                         auto_state = saved_auto_states[busid_for_auto]
@@ -385,6 +424,9 @@ class DeviceManagementController(QObject):
                     else:
                         auto_state = self.main_window.get_auto_reconnect_state(ip, busid_for_auto, "local")
                         auto_btn.setChecked(auto_state)
+                    auto_btn.blockSignals(False)
+                    
+                    # Now connect the signal handler
                     auto_btn.toggled.connect(
                         lambda state, ip=ip, busid=busid_for_auto: self.main_window.toggle_auto_reconnect(ip, busid, state, "local")
                     )

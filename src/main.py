@@ -1,35 +1,85 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QInputDialog, QMessageBox, QLineEdit
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QStandardPaths
 from gui.window import MainWindow
+from gui.dialogs.sudo_dialog import SudoPasswordDialog, ThemedMessageBox
 from dependencies.checker import check_dependencies
+from styling.themes import ThemeManager
 import subprocess
+import os
+
+def get_saved_theme():
+    """Get the saved theme setting without requiring full window initialization"""
+    try:
+        # Try to load theme from the auto_reconnect.enc file
+        from security.crypto import FileEncryption
+        
+        # Create a temporary crypto instance to read the file
+        file_crypto = FileEncryption()
+        data = file_crypto.load_encrypted_file("auto_reconnect.enc")
+        return data.get('theme_setting', 'System Theme')
+    except Exception:
+        # If anything fails, default to system theme
+        return 'System Theme'
+
+def apply_theme_to_app(app, theme_name):
+    """Apply theme to the application early, before main window creation"""
+    try:
+        theme_manager = ThemeManager()
+        theme_manager.set_theme(theme_name)
+        stylesheet = theme_manager.get_stylesheet(theme_name)
+        if stylesheet:
+            app.setStyleSheet(stylesheet)
+    except Exception:
+        # If theme application fails, continue with default
+        pass
 
 def validate_sudo_password():
     """Validate sudo password before creating the main window"""
-    app = QApplication(sys.argv) if not QApplication.instance() else QApplication.instance()
+    app = QApplication.instance()  # Use the existing app instance
     
     max_attempts = 3
     attempts = 0
     
     while attempts < max_attempts:
-        password, ok = QInputDialog.getText(
-            None,
-            "Sudo Password Required",
-            f"This application requires sudo access to manage USB devices.\nEnter your sudo password (attempt {attempts + 1}/{max_attempts}):" if attempts > 0 else "This application requires sudo access to manage USB devices.\nEnter your sudo password:",
-            QLineEdit.EchoMode.Password
-        )
+        # Create custom themed sudo password dialog
+        message = (f"This application requires sudo access to manage USB devices.\n"
+                  f"Enter your sudo password (attempt {attempts + 1}/{max_attempts}):" 
+                  if attempts > 0 else 
+                  "This application requires sudo access to manage USB devices.\n"
+                  "Enter your sudo password:")
         
-        if not ok:  # User cancelled
-            QMessageBox.critical(None, "Error", "Sudo password is required for this application to function properly.")
+        dialog = SudoPasswordDialog("Sudo Password Required", message)
+        
+        if dialog.exec() != SudoPasswordDialog.DialogCode.Accepted:
+            # User cancelled
+            error_dialog = ThemedMessageBox(
+                "Error", 
+                "Sudo password is required for this application to function properly.",
+                "error"
+            )
+            error_dialog.exec()
             return None, app
-            
+        
+        password = dialog.get_password()
+        
         if not password.strip():  # Empty password
             attempts += 1
             if attempts < max_attempts:
-                QMessageBox.warning(None, "Invalid Password", "Password cannot be empty. Please try again.")
+                warning_dialog = ThemedMessageBox(
+                    "Invalid Password", 
+                    "Password cannot be empty. Please try again.",
+                    "warning"
+                )
+                warning_dialog.exec()
                 continue
             else:
-                QMessageBox.critical(None, "Error", "No valid sudo password provided. Application will exit.")
+                error_dialog = ThemedMessageBox(
+                    "Error", 
+                    "No valid sudo password provided. Application will exit.",
+                    "error"
+                )
+                error_dialog.exec()
                 return None, app
         
         # Test the password by running a simple sudo command
@@ -38,9 +88,19 @@ def validate_sudo_password():
         else:
             attempts += 1
             if attempts < max_attempts:
-                QMessageBox.warning(None, "Invalid Password", "Incorrect sudo password. Please try again.")
+                warning_dialog = ThemedMessageBox(
+                    "Invalid Password", 
+                    "Incorrect sudo password. Please try again.",
+                    "warning"
+                )
+                warning_dialog.exec()
             else:
-                QMessageBox.critical(None, "Error", "Invalid sudo password after multiple attempts. Application will exit.")
+                error_dialog = ThemedMessageBox(
+                    "Error", 
+                    "Invalid sudo password after multiple attempts. Application will exit.",
+                    "error"
+                )
+                error_dialog.exec()
                 return None, app
     
     return None, app
@@ -67,7 +127,14 @@ def main():
     #    print("Missing dependencies. Please install them and try again.")
     #    sys.exit(1)
 
-    # Validate sudo password first, before creating the main window
+    # Create the QApplication first
+    app = QApplication(sys.argv) if not QApplication.instance() else QApplication.instance()
+    
+    # Load and apply the saved theme before showing any dialogs
+    saved_theme = get_saved_theme()
+    apply_theme_to_app(app, saved_theme)
+
+    # Validate sudo password with themed dialogs
     sudo_password, app = validate_sudo_password()
     
     if sudo_password is None:
