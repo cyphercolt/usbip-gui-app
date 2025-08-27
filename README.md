@@ -37,7 +37,7 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 ## 📋 Requirements
 
 - **Python 3.8+**
-- **Linux** (tested on Ubuntu/Pop!_OS)
+- **Linux** (tested on KDE Neon)
 - **usbip** system package (`sudo apt install usbip` on Ubuntu/Debian)
 - **PyQt6** and **cryptography** Python packages (auto-installed)
 - USBIP installed and configured on local and remote systems
