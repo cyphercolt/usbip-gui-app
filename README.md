@@ -1,6 +1,7 @@
 # 🖥️ USBIP GUI Application
 
 A **secure**, modern Linux desktop GUI for managing USBIP devices locally and remotely via SSH. Perfect for gaming setups, home labs, and remote USB device management.
+**Note**, Fully Vibe Coded with GitHub Copilot, if you don't like AI, don't use this! I needed an app to send USB over IP that was tailored to my needs, and I am not a coder, so here we are!
 
 ## 📷 Screenshots
 <img width="369" height="146" alt="image" src="https://github.com/user-attachments/assets/1a85b6e0-37dd-49c1-92f4-0f50cab4f9bc" />
