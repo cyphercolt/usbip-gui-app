@@ -3,7 +3,8 @@ import os
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
                              QMessageBox, QInputDialog, QTextEdit, QCheckBox, QLineEdit,
-                             QSplitter, QHeaderView, QSpinBox, QGroupBox, QFormLayout)
+                             QSplitter, QHeaderView, QSpinBox, QGroupBox, QFormLayout,
+                             QScrollArea, QDialogButtonBox)
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QPalette, QMovie
 import subprocess
@@ -18,6 +19,7 @@ IPS_FILE = "ips.enc"
 STATE_FILE = "usbip_state.enc" 
 SSH_STATE_FILE = "ssh_state.enc"
 AUTO_RECONNECT_FILE = "auto_reconnect.enc"
+DEVICE_MAPPING_FILE = "device_mapping.enc"
 
 
 class ToggleButton(QPushButton):
@@ -142,22 +144,6 @@ class MainWindow(QMainWindow):
         # Auto-reconnect controls
         self.auto_reconnect_enabled = True
         self.auto_reconnect_grace_period = False  # Flag to pause auto-reconnect temporarily
-        self.disable_auto_button = QPushButton("Disable Auto-Reconnect")
-        self.disable_auto_button.clicked.connect(self.toggle_auto_reconnect_global)
-        self.disable_auto_button.setStyleSheet("""
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-                border: 2px solid #da190b;
-                border-radius: 4px;
-                padding: 4px 8px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #da190b;
-            }
-        """)
-        btn_layout.addWidget(self.disable_auto_button)
 
         # Auto-reconnect settings button
         self.auto_settings_button = QPushButton("Auto Settings")
@@ -251,9 +237,47 @@ class MainWindow(QMainWindow):
         
         self.layout.addLayout(console_layout)
 
-        # Exit button at bottom right
+        # About, Help, and Exit buttons at bottom right
         exit_layout = QHBoxLayout()
         exit_layout.addStretch()
+        
+        # About button
+        self.about_button = QPushButton("About")
+        self.about_button.clicked.connect(self.show_about_dialog)
+        self.about_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: 2px solid #1976D2;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+        exit_layout.addWidget(self.about_button)
+        
+        # Help button
+        self.help_button = QPushButton("Help")
+        self.help_button.clicked.connect(self.show_help_dialog)
+        self.help_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                border: 2px solid #45a049;
+                border-radius: 4px;
+                padding: 4px 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+        """)
+        exit_layout.addWidget(self.help_button)
+        
+        # Exit button
         self.exit_button = QPushButton("Exit")
         self.exit_button.clicked.connect(self.close)
         exit_layout.addWidget(self.exit_button)
@@ -267,17 +291,30 @@ class MainWindow(QMainWindow):
         self.auto_reconnect_max_attempts = 5
         self.grace_period_duration = 60  # seconds
         self.auto_reconnect_attempts = {}  # Track attempts per device
-        self.load_auto_reconnect_settings()
         
+        # Initialize auto-refresh system
+        self.auto_refresh_enabled = False
+        self.auto_refresh_interval = 60  # seconds
+        
+        # Initialize timers before loading settings
         # Auto-reconnect timer
         self.auto_reconnect_timer = QTimer()
         self.auto_reconnect_timer.timeout.connect(self.check_auto_reconnect)
-        self.auto_reconnect_timer.start(self.auto_reconnect_interval * 1000)  # Convert to milliseconds
+        
+        # Auto-refresh timer
+        self.auto_refresh_timer = QTimer()
+        self.auto_refresh_timer.timeout.connect(self.auto_refresh_devices)
         
         # Grace period timer for manual operations
         self.grace_period_timer = QTimer()
         self.grace_period_timer.setSingleShot(True)  # One-time timer
         self.grace_period_timer.timeout.connect(self.end_grace_period)
+        
+        # Load settings and start timers
+        self.load_auto_reconnect_settings()
+        
+        # Start auto-reconnect timer
+        self.auto_reconnect_timer.start(self.auto_reconnect_interval * 1000)  # Convert to milliseconds
         
         # Clear console after initial loading and show clean welcome message
         self.console.clear()
@@ -292,12 +329,11 @@ class MainWindow(QMainWindow):
         self.console.append("• Use SSH Devices to start connection")
         self.console.append("• IPD Reset refreshes the USBIP Daemon on the remote if needed")
         self.console.append("")
-        self.console.append("✨ NEW: Auto-Reconnect Feature")
-        self.console.append(f"• Auto-reconnect enabled every {self.auto_reconnect_interval} seconds")
+        self.console.append("✨ NEW: Auto-Reconnect & Auto-Refresh Features")
+        self.console.append(f"• Auto-reconnect {'enabled' if self.auto_reconnect_enabled else 'disabled'} every {self.auto_reconnect_interval} seconds")
         self.console.append("• Use 'Auto' column to enable per-device auto-reconnect")
         self.console.append("• Works for both ATTACH (local) and BIND (remote) operations")
-        self.console.append("• Click 'Disable Auto-Reconnect' for emergency stop")
-        self.console.append("• Use 'Auto Settings' to customize timing")
+        self.console.append("• Use 'Auto Settings' to customize timing and enable/disable features")
         self.console.append("")
         self.console.append("Ready for device management!")
         self.console.append("=" * 50)
@@ -523,6 +559,20 @@ class MainWindow(QMainWindow):
             self.console.append(f"Error pinging {ip}: Connection failed\n")
 
     def load_devices(self):
+        # Save auto-reconnect states before clearing the table
+        saved_auto_states = {}
+        ip = self.ip_input.currentText()
+        if ip:
+            for row in range(self.device_table.rowCount()):
+                busid_item = self.device_table.item(row, 0)
+                auto_btn = self.device_table.cellWidget(row, 3)
+                if busid_item and auto_btn and hasattr(auto_btn, 'isChecked'):
+                    busid = busid_item.text()
+                    # Only save if it's not a "Port" entry and has a real auto state
+                    if not busid.startswith("Port") and auto_btn.isEnabled():
+                        auto_state = auto_btn.isChecked()
+                        saved_auto_states[busid] = auto_state
+        
         # Disable sorting during table population to prevent widget issues
         self.device_table.setSortingEnabled(False)
         
@@ -544,14 +594,16 @@ class MainWindow(QMainWindow):
             attached_busids = set()
             attached_descs = set()  # Build attached descriptions from port output
             current_port = None
+            current_busid = None  # Track the busid for the current port
             for line in port_output.splitlines():
                 line = line.strip()
                 if line.startswith("Port"):
                     current_port = line.split()[1].replace(":", "")
+                    current_busid = None  # Reset busid for new port
                 elif current_port and line and line[0].isdigit() and '-' in line:
-                    busid = line.split()[0]
-                    attached_busids.add(busid)
-                elif current_port and line and ":" in line:
+                    current_busid = line.split()[0]  # This is the busid line
+                    attached_busids.add(current_busid)
+                elif current_port and current_busid and line and ":" in line:
                     desc = line
                     attached_descs.add(desc)  # Capture attached device descriptions
 
@@ -583,29 +635,101 @@ class MainWindow(QMainWindow):
                 
                 # Create auto-reconnect toggle button
                 auto_btn = ToggleButton("AUTO", "MANUAL")
-                auto_btn.setChecked(self.get_auto_reconnect_state(ip, dev["busid"]))
+                # Use saved state if available, otherwise read from encrypted file
+                if dev["busid"] in saved_auto_states:
+                    auto_state = saved_auto_states[dev["busid"]]
+                    auto_btn.setChecked(auto_state)
+                else:
+                    auto_state = self.get_auto_reconnect_state(ip, dev["busid"], "local")
+                    auto_btn.setChecked(auto_state)
                 auto_btn.toggled.connect(
-                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state)
+                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state, "local")
                 )
                 self.device_table.setCellWidget(row, 3, auto_btn)
 
+            # Add devices that are attached but no longer in remote list (using mappings)
+            data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
+            mappings = data.get('mappings', {})
+            
+            for remote_busid, mapping_info in mappings.items():
+                port_busid = mapping_info.get('port_busid')
+                
+                # Check if this mapped device is currently attached
+                if port_busid in attached_busids:
+                    # This device is attached but not in remote list - add it
+                    remote_desc = mapping_info.get('remote_desc', 'Unknown Device')
+                    
+                    # Check if we already added this device from the remote list
+                    already_in_table = False
+                    for row in range(self.device_table.rowCount()):
+                        busid_item = self.device_table.item(row, 0)
+                        if busid_item and busid_item.text() == remote_busid:
+                            already_in_table = True
+                            break
+                    
+                    if not already_in_table:
+                        row = self.device_table.rowCount()
+                        self.device_table.insertRow(row)
+                        self.device_table.setItem(row, 0, self.create_table_item_with_tooltip(remote_busid))
+                        self.device_table.setItem(row, 1, self.create_table_item_with_tooltip(remote_desc))
+                        
+                        # Create toggle button (attached state)
+                        toggle_btn = ToggleButton("ATTACHED", "DETACHED")
+                        toggle_btn.setChecked(True)  # It's attached
+                        toggle_btn.toggled.connect(
+                            lambda state, ip=ip, busid=remote_busid, desc=remote_desc: self.toggle_attach(ip, busid, desc, 2 if state else 0)
+                        )
+                        self.device_table.setCellWidget(row, 2, toggle_btn)
+                        
+                        # Create auto-reconnect toggle button with preserved state
+                        auto_btn = ToggleButton("AUTO", "MANUAL")
+                        if remote_busid in saved_auto_states:
+                            auto_state = saved_auto_states[remote_busid]
+                            auto_btn.setChecked(auto_state)
+                        else:
+                            auto_state = self.get_auto_reconnect_state(ip, remote_busid, "local")
+                            auto_btn.setChecked(auto_state)
+                        auto_btn.toggled.connect(
+                            lambda state, ip=ip, busid=remote_busid: self.toggle_auto_reconnect(ip, busid, state, "local")
+                        )
+                        self.device_table.setCellWidget(row, 3, auto_btn)
+
             # List locally attached devices (usbip port) that aren't in the remote list
-            # Build set of descriptions already added to the table
+            # Build set of descriptions and busids already added to the table
             table_descs = set()
+            table_busids = set()
             for row in range(self.device_table.rowCount()):
                 desc_item = self.device_table.item(row, 1)
+                busid_item = self.device_table.item(row, 0)
                 if desc_item:
                     table_descs.add(desc_item.text())
+                if busid_item:
+                    # Extract busid from items like "1-1.2" or "Port 00"
+                    busid_text = busid_item.text()
+                    if not busid_text.startswith("Port"):  # Only add actual busids
+                        table_busids.add(busid_text)
             
             current_port = None
+            current_busid = None
+            port_to_busid = {}  # Map port to busid
             for line in port_output.splitlines():
                 line = line.strip()
                 if line.startswith("Port"):
                     current_port = line.split()[1].replace(":", "")
-                elif current_port and line and ":" in line:
+                    current_busid = None
+                elif current_port and line and line[0].isdigit() and '-' in line:
+                    current_busid = line.split()[0]
+                    port_to_busid[current_port] = current_busid
+                elif current_port and current_busid and line and ":" in line:
                     desc = line
-                    # Only add if not already present in the table
-                    if desc not in table_descs:
+                    # Check if this device is already in the table (by busid or mapping)
+                    remote_busid = self.get_remote_busid_for_port(current_busid)
+                    
+                    # Skip if already in table (either by port busid or remote busid)
+                    already_in_table = (current_busid in table_busids or 
+                                      (remote_busid and remote_busid in table_busids))
+                    
+                    if not already_in_table:
                         row = self.device_table.rowCount()
                         self.device_table.insertRow(row)
                         self.device_table.setItem(row, 0, self.create_table_item_with_tooltip(f"Port {current_port}"))
@@ -619,10 +743,20 @@ class MainWindow(QMainWindow):
                         )
                         self.device_table.setCellWidget(row, 2, toggle_btn)
                         
-                        # Create auto-reconnect toggle for local devices (disabled)
-                        auto_btn = ToggleButton("N/A", "N/A")
-                        auto_btn.setEnabled(False)  # Local devices don't need auto-reconnect
-                        auto_btn.setStyleSheet("QPushButton { background-color: #ccc; color: #666; }")
+                        # Create auto-reconnect toggle using the original remote busid if available
+                        auto_btn = ToggleButton("AUTO", "MANUAL")
+                        busid_for_auto = remote_busid if remote_busid else current_busid
+                        
+                        # Use saved state if available, otherwise read from encrypted file
+                        if busid_for_auto in saved_auto_states:
+                            auto_state = saved_auto_states[busid_for_auto]
+                            auto_btn.setChecked(auto_state)
+                        else:
+                            auto_state = self.get_auto_reconnect_state(ip, busid_for_auto, "local")
+                            auto_btn.setChecked(auto_state)
+                        auto_btn.toggled.connect(
+                            lambda state, ip=ip, busid=busid_for_auto: self.toggle_auto_reconnect(ip, busid, state, "local")
+                        )
                         self.device_table.setCellWidget(row, 3, auto_btn)
         except Exception as e:
             self.console.append(f"Error loading devices: {e}\n")
@@ -702,9 +836,50 @@ class MainWindow(QMainWindow):
             if not result:
                 self.console.append("Attach command failed or returned no output.\n")
                 return False
+            
+            # After successful attach, find which port it was assigned to
+            time.sleep(0.5)  # Give time for device to appear in port list
+            port_result = subprocess.run(
+                ["usbip", "port"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Find the newly attached device in port list
+            port_output = port_result.stdout
+            current_port = None
+            port_desc = None
+            port_busid = None
+            
+            for line in port_output.splitlines():
+                line = line.strip()
+                
+                if line.startswith("Port"):
+                    current_port = line.split()[1].replace(":", "")
+                    port_desc = None
+                    port_busid = None
+                elif current_port and line and ":" in line and not line.startswith("Port") and "->" not in line:
+                    # This is a description line
+                    port_desc = line
+                elif current_port and line and "->" in line and line[0].isdigit():
+                    # This is the busid line (e.g., "3-1 -> unknown host...")
+                    port_busid = line.split()[0]
+                    
+                    # Now we have all info - check if this matches our target device
+                    if port_desc:
+                        
+                        if desc in port_desc or desc.split("(")[0].strip() in port_desc:
+                            # Found the device - save the mapping
+                            self.save_device_mapping(busid, desc, current_port, port_busid)
+                            break
+            
             self.save_state(ip, busid, True)
             return True
         elif state == 0:  # Unchecked (Detach)
+            # Remove device mapping when detaching
+            self.remove_device_mapping(busid)
+            
             # Find the port number for this device description
             port_result = subprocess.run(
                 ["usbip", "port"],
@@ -775,90 +950,102 @@ class MainWindow(QMainWindow):
 
     # Auto-reconnect functionality
     def load_auto_reconnect_settings(self):
-        """Load auto-reconnect settings from encrypted file"""
+        """Load auto-reconnect and auto-refresh settings from encrypted file"""
         data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
+        self.auto_reconnect_enabled = data.get('auto_reconnect_enabled', True)  # Default to enabled
         self.auto_reconnect_interval = data.get('interval', 30)
         self.auto_reconnect_max_attempts = data.get('max_attempts', 5)
         self.grace_period_duration = data.get('grace_period', 60)
+        self.auto_refresh_enabled = data.get('auto_refresh_enabled', False)
+        self.auto_refresh_interval = data.get('auto_refresh_interval', 60)
+        
+        # Start auto-refresh timer if enabled
+        if self.auto_refresh_enabled:
+            self.auto_refresh_timer.start(self.auto_refresh_interval * 1000)
+        
         return data.get('devices', {})
 
     def save_auto_reconnect_settings(self):
-        """Save auto-reconnect settings to encrypted file"""
+        """Save auto-reconnect and auto-refresh settings to encrypted file"""
         data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
+        data['auto_reconnect_enabled'] = self.auto_reconnect_enabled
         data['interval'] = self.auto_reconnect_interval
         data['max_attempts'] = self.auto_reconnect_max_attempts
         data['grace_period'] = self.grace_period_duration
+        data['auto_refresh_enabled'] = self.auto_refresh_enabled
+        data['auto_refresh_interval'] = self.auto_refresh_interval
         if 'devices' not in data:
             data['devices'] = {}
         self.file_crypto.save_encrypted_file(AUTO_RECONNECT_FILE, data)
 
-    def get_auto_reconnect_state(self, ip, busid):
-        """Get auto-reconnect state for a specific device"""
+    def get_auto_reconnect_state(self, ip, busid, table_type="local"):
+        """Get auto-reconnect state for a specific device with table type separation"""
         data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
         devices = data.get('devices', {})
-        device_key = f"{ip}:{busid}"
+        device_key = f"{table_type}:{ip}:{busid}"  # Separate by table type
         return devices.get(device_key, False)
 
-    def toggle_auto_reconnect(self, ip, busid, enabled):
-        """Toggle auto-reconnect for a specific device"""
+    def toggle_auto_reconnect(self, ip, busid, enabled, table_type="local"):
+        """Toggle auto-reconnect for a specific device with table type separation"""
         data = self.file_crypto.load_encrypted_file(AUTO_RECONNECT_FILE)
         if 'devices' not in data:
             data['devices'] = {}
         
-        device_key = f"{ip}:{busid}"
+        device_key = f"{table_type}:{ip}:{busid}"  # Separate by table type
         data['devices'][device_key] = enabled
         
         if enabled:
-            self.console.append(f"🔄 Auto-reconnect enabled for {busid} on {ip}")
+            self.console.append(f"🔄 Auto-reconnect enabled for {busid} on {ip} ({table_type})")
             # Reset attempt counter when enabled
             if device_key in self.auto_reconnect_attempts:
                 del self.auto_reconnect_attempts[device_key]
         else:
-            self.console.append(f"⏹️ Auto-reconnect disabled for {busid} on {ip}")
+            self.console.append(f"⏹️ Auto-reconnect disabled for {busid} on {ip} ({table_type})")
             # Remove from attempt tracking
             if device_key in self.auto_reconnect_attempts:
                 del self.auto_reconnect_attempts[device_key]
         
         self.file_crypto.save_encrypted_file(AUTO_RECONNECT_FILE, data)
 
-    def toggle_auto_reconnect_global(self):
-        """Toggle global auto-reconnect on/off"""
-        self.auto_reconnect_enabled = not self.auto_reconnect_enabled
+    def save_device_mapping(self, remote_busid, remote_desc, port_number, port_busid):
+        """Save mapping between remote device and attached port"""
+        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
+        if 'mappings' not in data:
+            data['mappings'] = {}
         
-        if self.auto_reconnect_enabled:
-            self.disable_auto_button.setText("Disable Auto-Reconnect")
-            self.disable_auto_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #f44336;
-                    color: white;
-                    border: 2px solid #da190b;
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #da190b;
-                }
-            """)
-            self.console.append("🟢 Global auto-reconnect ENABLED")
-            # Reset all attempt counters
-            self.auto_reconnect_attempts.clear()
-        else:
-            self.disable_auto_button.setText("Enable Auto-Reconnect")
-            self.disable_auto_button.setStyleSheet("""
-                QPushButton {
-                    background-color: #4CAF50;
-                    color: white;
-                    border: 2px solid #45a049;
-                    border-radius: 4px;
-                    padding: 4px 8px;
-                    font-weight: bold;
-                }
-                QPushButton:hover {
-                    background-color: #45a049;
-                }
-            """)
-            self.console.append("🔴 Global auto-reconnect DISABLED")
+        # Store mapping: remote_busid -> port info
+        data['mappings'][remote_busid] = {
+            'remote_desc': remote_desc,
+            'port_number': port_number,
+            'port_busid': port_busid,
+            'timestamp': time.time()
+        }
+        
+        self.file_crypto.save_encrypted_file(DEVICE_MAPPING_FILE, data)
+        self.console.append(f"🔗 Mapped remote device {remote_busid} to port {port_number} (busid: {port_busid})")
+
+    def get_device_mapping(self, remote_busid):
+        """Get port mapping for a remote device"""
+        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
+        mappings = data.get('mappings', {})
+        return mappings.get(remote_busid)
+
+    def remove_device_mapping(self, remote_busid):
+        """Remove mapping when device is detached"""
+        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
+        if 'mappings' in data and remote_busid in data['mappings']:
+            del data['mappings'][remote_busid]
+            self.file_crypto.save_encrypted_file(DEVICE_MAPPING_FILE, data)
+            self.console.append(f"🔗 Removed mapping for remote device {remote_busid}")
+
+    def get_remote_busid_for_port(self, port_busid):
+        """Get the original remote busid for a port busid"""
+        data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
+        mappings = data.get('mappings', {})
+        for remote_busid, mapping_info in mappings.items():
+            if mapping_info.get('port_busid') == port_busid:
+                return remote_busid
+        return None
 
     def start_grace_period(self, duration_seconds=None):
         """Start grace period to pause auto-reconnect after manual bulk operations"""
@@ -876,59 +1063,366 @@ class MainWindow(QMainWindow):
             self.console.append("▶️ Auto-reconnect resumed after grace period")
 
     def show_auto_reconnect_settings(self):
-        """Show auto-reconnect settings dialog"""
-        from PyQt6.QtWidgets import QDialog, QFormLayout, QSpinBox, QDialogButtonBox, QLabel
+        """Show auto-reconnect and auto-refresh settings dialog"""
+        from PyQt6.QtWidgets import QDialog, QFormLayout, QSpinBox, QDialogButtonBox, QLabel, QCheckBox, QGroupBox, QVBoxLayout
 
         dialog = QDialog(self)
-        dialog.setWindowTitle("Auto-Reconnect Settings")
-        dialog.setMinimumWidth(350)
-        layout = QFormLayout(dialog)
+        dialog.setWindowTitle("Auto-Reconnect & Auto-Refresh Settings")
+        dialog.setMinimumWidth(400)
+        main_layout = QVBoxLayout(dialog)
+
+        # Auto-Reconnect Group
+        reconnect_group = QGroupBox("Auto-Reconnect Settings")
+        reconnect_layout = QFormLayout(reconnect_group)
+
+        # Auto-reconnect enabled checkbox
+        reconnect_enabled_input = QCheckBox()
+        reconnect_enabled_input.setChecked(self.auto_reconnect_enabled)
+        reconnect_layout.addRow("Enable Auto-Reconnect:", reconnect_enabled_input)
 
         # Interval setting
         interval_input = QSpinBox()
         interval_input.setRange(10, 300)  # 10 seconds to 5 minutes
         interval_input.setSuffix(" seconds")
         interval_input.setValue(self.auto_reconnect_interval)
-        layout.addRow("Check Interval:", interval_input)
+        reconnect_layout.addRow("Check Interval:", interval_input)
 
         # Max attempts setting
         attempts_input = QSpinBox()
         attempts_input.setRange(1, 20)
         attempts_input.setValue(self.auto_reconnect_max_attempts)
-        layout.addRow("Max Attempts:", attempts_input)
+        reconnect_layout.addRow("Max Attempts:", attempts_input)
 
         # Grace period setting
         grace_input = QSpinBox()
         grace_input.setRange(30, 300)  # 30 seconds to 5 minutes
         grace_input.setSuffix(" seconds")
-        grace_input.setValue(60)  # Default grace period
-        layout.addRow("Grace Period:", grace_input)
+        grace_input.setValue(self.grace_period_duration)
+        reconnect_layout.addRow("Grace Period:", grace_input)
 
-        # Info label
-        info_label = QLabel("Auto-reconnect will check for disconnected devices at the specified interval and attempt to reconnect them automatically. Grace period pauses auto-reconnect after manual bulk operations.")
-        info_label.setWordWrap(True)
-        info_label.setStyleSheet("color: #666; font-style: italic; margin: 10px 0;")
-        layout.addRow(info_label)
+        # Auto-reconnect info label
+        reconnect_info_label = QLabel("Auto-reconnect will check for disconnected devices at the specified interval and attempt to reconnect them automatically.")
+        reconnect_info_label.setWordWrap(True)
+        reconnect_info_label.setStyleSheet("color: #666; font-style: italic; margin: 10px 0;")
+        reconnect_layout.addRow(reconnect_info_label)
+
+        main_layout.addWidget(reconnect_group)
+
+        # Auto-Refresh Group
+        refresh_group = QGroupBox("Auto-Refresh Settings")
+        refresh_layout = QFormLayout(refresh_group)
+
+        # Auto-refresh enabled checkbox
+        refresh_enabled_input = QCheckBox()
+        refresh_enabled_input.setChecked(self.auto_refresh_enabled)
+        refresh_layout.addRow("Enable Auto-Refresh:", refresh_enabled_input)
+
+        # Auto-refresh interval setting
+        refresh_interval_input = QSpinBox()
+        refresh_interval_input.setRange(30, 600)  # 30 seconds to 10 minutes
+        refresh_interval_input.setSuffix(" seconds")
+        refresh_interval_input.setValue(self.auto_refresh_interval)
+        refresh_layout.addRow("Refresh Interval:", refresh_interval_input)
+
+        # Auto-refresh info label
+        refresh_info_label = QLabel("Auto-refresh will periodically refresh both local and SSH device tables to keep them up-to-date.")
+        refresh_info_label.setWordWrap(True)
+        refresh_info_label.setStyleSheet("color: #666; font-style: italic; margin: 10px 0;")
+        refresh_layout.addRow(refresh_info_label)
+
+        main_layout.addWidget(refresh_group)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        layout.addWidget(buttons)
+        main_layout.addWidget(buttons)
 
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
 
         if dialog.exec():
             old_interval = self.auto_reconnect_interval
+            old_reconnect_enabled = self.auto_reconnect_enabled
+            old_refresh_enabled = self.auto_refresh_enabled
+            old_refresh_interval = self.auto_refresh_interval
+            
+            # Update auto-reconnect settings
+            self.auto_reconnect_enabled = reconnect_enabled_input.isChecked()
             self.auto_reconnect_interval = interval_input.value()
             self.auto_reconnect_max_attempts = attempts_input.value()
             self.grace_period_duration = grace_input.value()
             
+            # Update auto-refresh settings
+            self.auto_refresh_enabled = refresh_enabled_input.isChecked()
+            self.auto_refresh_interval = refresh_interval_input.value()
+            
             self.save_auto_reconnect_settings()
             
-            # Restart timer if interval changed
+            # Handle auto-reconnect enable/disable
+            if self.auto_reconnect_enabled != old_reconnect_enabled:
+                if self.auto_reconnect_enabled:
+                    self.console.append("▶️ Auto-reconnect enabled")
+                else:
+                    self.console.append("⏸️ Auto-reconnect disabled")
+            
+            # Restart auto-reconnect timer if interval changed
             if old_interval != self.auto_reconnect_interval:
                 self.auto_reconnect_timer.start(self.auto_reconnect_interval * 1000)
+            
+            # Handle auto-refresh timer
+            if self.auto_refresh_enabled != old_refresh_enabled:
+                if self.auto_refresh_enabled:
+                    self.auto_refresh_timer.start(self.auto_refresh_interval * 1000)
+                    self.console.append("🔄 Auto-refresh enabled")
+                else:
+                    self.auto_refresh_timer.stop()
+                    self.console.append("⏸️ Auto-refresh disabled")
+            elif self.auto_refresh_enabled and old_refresh_interval != self.auto_refresh_interval:
+                self.auto_refresh_timer.start(self.auto_refresh_interval * 1000)
+                self.console.append(f"🔄 Auto-refresh interval updated to {self.auto_refresh_interval}s")
                 
-            self.console.append(f"⚙️ Auto-reconnect settings updated: {self.auto_reconnect_interval}s interval, {self.auto_reconnect_max_attempts} max attempts, {self.grace_period_duration}s grace period")
+            self.console.append(f"⚙️ Settings updated: Auto-reconnect {'enabled' if self.auto_reconnect_enabled else 'disabled'} ({self.auto_reconnect_interval}s interval, {self.auto_reconnect_max_attempts} max attempts, {self.grace_period_duration}s grace period) | Auto-refresh {'enabled' if self.auto_refresh_enabled else 'disabled'} ({self.auto_refresh_interval}s)")
+
+    def show_about_dialog(self):
+        """Show application about dialog"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QTextEdit
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QFont, QPalette
+        import datetime
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("About USBIP GUI")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(600)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+
+        # Detect dark mode
+        palette = self.palette()
+        is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        
+        # Theme-appropriate colors
+        if is_dark_mode:
+            bg_color = "#2b2b2b"
+            text_color = "#ffffff"
+            title_color = "#2196F3"
+            header_color = "#2196F3"
+            version_color = "#cccccc"
+            link_color = "#64B5F6"
+            border_color = "#555"
+        else:
+            bg_color = "#f9f9f9"
+            text_color = "#333333"
+            title_color = "#2196F3"
+            header_color = "#2196F3"
+            version_color = "#666666"
+            link_color = "#2196F3"
+            border_color = "#ddd"
+
+        # Title
+        title_label = QLabel("🔌 USBIP GUI Application")
+        title_font = QFont()
+        title_font.setPointSize(18)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet(f"color: {title_color}; margin: 10px;")
+        layout.addWidget(title_label)
+
+        # Version and description
+        version_label = QLabel("Version 2.0.0 - Advanced USB/IP Management Tool")
+        version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_label.setStyleSheet(f"font-size: 12px; color: {version_color}; margin-bottom: 15px;")
+        layout.addWidget(version_label)
+
+        # Content area with scroll
+        scroll_area = QScrollArea()
+        scroll_widget = QWidget()
+        scroll_layout = QVBoxLayout(scroll_widget)
+        
+        content_label = QLabel()
+        content_label.setWordWrap(True)
+        content_label.setOpenExternalLinks(True)
+        content_label.setTextFormat(Qt.TextFormat.RichText)
+        content_label.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll_layout.addWidget(content_label)
+        
+        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidgetResizable(True)
+        
+        # Build the about content with theme-appropriate colors
+        current_year = datetime.datetime.now().year
+        about_content = f"""
+<h3 style="color: {header_color}; margin-top: 0;">✨ Key Features:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>🔄 <b>Auto-Reconnect System</b> - Automatically reconnect dropped USB devices</li>
+<li>🔃 <b>Auto-Refresh</b> - Keep device lists updated in real-time</li>
+<li>🔒 <b>Secure State Management</b> - Encrypted storage of settings and device mappings</li>
+<li>🖥️ <b>SSH Integration</b> - Seamless remote USB/IP daemon management</li>
+<li>📊 <b>Device Mapping</b> - Smart correlation between remote and local devices</li>
+<li>⚙️ <b>Advanced Settings</b> - Customizable intervals, grace periods, and more</li>
+<li>🎯 <b>Per-Device Control</b> - Individual auto-reconnect settings per device</li>
+<li>🚀 <b>Bulk Operations</b> - Attach/detach multiple devices with grace period handling</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🛠️ Technical Information:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>Built with <b>PyQt6</b> for modern, responsive UI</li>
+<li><b>AES-256</b> encryption for secure data storage</li>
+<li><b>USB/IP protocol</b> support for kernel-level USB forwarding</li>
+<li><b>Cross-platform</b> compatible (Linux primary support)</li>
+<li><b>Memory-safe</b> password handling with secure cleanup</li>
+<li><b>Dark/Light mode</b> automatic theme detection and adaptation</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🔗 Source Code & Updates:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>GitHub Repository:</b> <a href="https://github.com/cyphercolt/usbip-gui-app" style="color: {link_color}; text-decoration: none;">github.com/cyphercolt/usbip-gui-app</a></li>
+<li>🐛 <b>Report Issues:</b> Submit bug reports and feature requests</li>
+<li>🔄 <b>Latest Updates:</b> Check for new releases and improvements</li>
+<li>📖 <b>Documentation:</b> Setup guides and usage instructions</li>
+<li>⭐ <b>Star the Project:</b> Show your support for continued development</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🏆 Project Highlights:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>🎯 <b>Production Ready:</b> Robust error handling and state management</li>
+<li>🔐 <b>Security First:</b> Encrypted storage and secure password handling</li>
+<li>🎨 <b>Modern UI:</b> Responsive design with dark/light mode support</li>
+<li>🔧 <b>Extensible:</b> Clean architecture for future enhancements</li>
+<li>📱 <b>User Friendly:</b> Intuitive interface with comprehensive help system</li>
+</ul>
+
+<div style="margin-top: 30px; padding: 15px; text-align: center; border-top: 2px solid {header_color}; color: {text_color};">
+<p style="margin: 5px 0; font-style: italic;">🚀 {current_year} - Open Source USB/IP Management Solution</p>
+<p style="margin: 5px 0; font-size: 11px; color: {version_color};">Empowering remote USB device access with enterprise-grade reliability</p>
+<p style="margin: 5px 0; font-size: 10px; color: {version_color};">Free and open source software - Built by the community, for the community</p>
+</div>
+        """
+        
+        content_label.setText(about_content)
+        content_label.setStyleSheet(f"""
+            font-size: 12px; 
+            background-color: {bg_color}; 
+            color: {text_color};
+            border: 1px solid {border_color}; 
+            border-radius: 5px; 
+            padding: 10px;
+        """)
+        
+        layout.addWidget(scroll_area)
+
+        # Close button
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+
+        dialog.exec()
+
+    def show_help_dialog(self):
+        """Show help dialog with quick start instructions"""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QTextEdit
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QFont, QPalette
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Help - Quick Start Guide")
+        dialog.setMinimumWidth(500)
+        dialog.setMinimumHeight(450)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(15)
+
+        # Detect dark mode
+        palette = self.palette()
+        is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
+        
+        # Theme-appropriate colors
+        if is_dark_mode:
+            bg_color = "#2b2b2b"
+            text_color = "#ffffff"
+            header_color = "#4CAF50"
+            border_color = "#555"
+            tip_bg_color = "#1e3a1e"
+            tip_border_color = "#4CAF50"
+        else:
+            bg_color = "#f9f9f9"
+            text_color = "#333333"
+            header_color = "#4CAF50"
+            border_color = "#ddd"
+            tip_bg_color = "#e8f5e8"
+            tip_border_color = "#4CAF50"
+
+        # Title
+        title_label = QLabel("🚀 USBIP GUI - Quick Start Guide")
+        title_font = QFont()
+        title_font.setPointSize(16)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet(f"color: {header_color}; margin: 10px;")
+        layout.addWidget(title_label)
+
+        # Instructions content
+        instructions_text = QTextEdit()
+        instructions_text.setReadOnly(True)
+        
+        # Build the help content with theme-appropriate colors
+        help_content = f"""
+<h3 style="color: {header_color}; margin-top: 0;">📋 Basic Setup:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>Add an IP / Hostname</b> - Enter your remote server's address</li>
+<li><b>Use SSH Devices</b> - Start connection to remote USB/IP daemon</li>
+<li><b>IPD Reset</b> - Refreshes the USBIP Daemon on the remote if needed</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">✨ Auto-Reconnect & Auto-Refresh Features:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>Auto-reconnect:</b> {'Currently enabled' if self.auto_reconnect_enabled else 'Currently disabled'} (checks every {self.auto_reconnect_interval} seconds)</li>
+<li><b>Auto-refresh:</b> {'Currently enabled' if self.auto_refresh_enabled else 'Currently disabled'} (refreshes every {self.auto_refresh_interval} seconds)</li>
+<li><b>Per-Device Control:</b> Use 'Auto' column to enable auto-reconnect for specific devices</li>
+<li><b>Works for both:</b> ATTACH (local) and BIND (remote) operations</li>
+<li><b>Customization:</b> Use 'Auto Settings' button to configure timing and features</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🎯 Device Management:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>Local Devices Table:</b> Shows USB devices attached to your local machine</li>
+<li><b>SSH Devices Table:</b> Shows USB devices available on the remote server</li>
+<li><b>Toggle Buttons:</b> ATTACH/DETACH devices or BIND/UNBIND remote devices</li>
+<li><b>Bulk Operations:</b> Use "Attach All" / "Detach All" for multiple devices</li>
+<li><b>Smart Mapping:</b> System automatically correlates remote devices with local ports</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">⚙️ Advanced Features:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>Encrypted Storage:</b> All settings and device mappings are securely stored</li>
+<li><b>Grace Period:</b> Auto-reconnect pauses temporarily after bulk operations</li>
+<li><b>Console Output:</b> Real-time feedback on all operations and status</li>
+<li><b>Persistent State:</b> Device states and settings survive application restarts</li>
+</ul>
+
+<p style="margin-top: 25px; padding: 10px; background-color: {tip_bg_color}; border-radius: 5px; border-left: 4px solid {tip_border_color}; color: {text_color};">
+<b>💡 Tip:</b> For detailed technical information and source code, click the <b>About</b> button to access the GitHub repository link.
+</p>
+        """
+        
+        instructions_text.setHtml(help_content)
+        instructions_text.setStyleSheet(f"""
+            font-size: 12px; 
+            background-color: {bg_color}; 
+            color: {text_color};
+            border: 1px solid {border_color}; 
+            border-radius: 5px; 
+            padding: 10px;
+        """)
+        layout.addWidget(instructions_text)
+
+        # Close button
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+
+        dialog.exec()
 
     def check_auto_reconnect(self):
         """Check for devices that need auto-reconnection"""
@@ -948,16 +1442,21 @@ class MainWindow(QMainWindow):
                 continue
                 
             try:
-                ip, busid = device_key.split(':', 1)
+                # New format: table_type:ip:busid
+                if device_key.count(':') >= 2:
+                    table_type, ip, busid = device_key.split(':', 2)
+                else:
+                    # Legacy format: ip:busid (assume local)
+                    ip, busid = device_key.split(':', 1)
+                    table_type = "local"
+                    
                 if ip != current_ip:
                     continue  # Only check current IP
                     
-                # Check if device should be attached but isn't (local table)
-                if self.should_auto_reconnect_device(ip, busid):
+                # Check based on table type
+                if table_type == "local" and self.should_auto_reconnect_device(ip, busid):
                     self.attempt_auto_reconnect(ip, busid, device_key)
-                
-                # Check if device should be bound but isn't (remote table)
-                elif self.should_auto_bind_device(ip, busid):
+                elif table_type == "remote" and self.should_auto_bind_device(ip, busid):
                     self.attempt_auto_bind(ip, busid, device_key)
                     
             except Exception as e:
@@ -1030,7 +1529,7 @@ class MainWindow(QMainWindow):
             if self.auto_reconnect_attempts[device_key] >= self.auto_reconnect_max_attempts:
                 self.console.append(f"❌ Auto-attach failed for {busid} - max attempts reached")
                 # Disable auto-reconnect for this device after max attempts
-                self.toggle_auto_reconnect(ip, busid, False)
+                self.toggle_auto_reconnect(ip, busid, False, "local")
                 self.update_auto_toggle_state(busid, False)
 
     def attempt_auto_bind(self, ip, busid, device_key):
@@ -1072,7 +1571,7 @@ class MainWindow(QMainWindow):
             if self.auto_reconnect_attempts[device_key] >= self.auto_reconnect_max_attempts:
                 self.console.append(f"❌ Auto-bind failed for {busid} - max attempts reached")
                 # Disable auto-reconnect for this device after max attempts
-                self.toggle_auto_reconnect(ip, busid, False)
+                self.toggle_auto_reconnect(ip, busid, False, "remote")
                 self.update_remote_auto_toggle_state(busid, False)
 
     def update_device_toggle_state(self, busid, attached):
@@ -1145,19 +1644,27 @@ class MainWindow(QMainWindow):
         except Exception:
             return False
 
+    def auto_refresh_devices(self):
+        """Automatically refresh both local and SSH device tables"""
+        if not self.auto_refresh_enabled:
+            return
+            
+        # Only auto-refresh if we have an IP selected
+        current_ip = self.ip_input.currentText()
+        if not current_ip:
+            return
+            
+        # Refresh all tables silently
+        self.refresh_all_tables()
+
     def refresh_local_devices_silently(self):
         """Refresh local device table without disrupting auto-reconnect states"""
         ip = self.ip_input.currentText()
         if not ip:
             return
             
-        # Save current auto-reconnect states before refresh
-        saved_auto_states = {}
-        for row in range(self.device_table.rowCount()):
-            busid_item = self.device_table.item(row, 0)
-            auto_btn = self.device_table.cellWidget(row, 3)
-            if busid_item and auto_btn:
-                saved_auto_states[busid_item.text()] = auto_btn.isChecked()
+        # Note: Auto-reconnect states are always read from encrypted file, not saved UI state
+        # This ensures proper persistence and prevents states from becoming N/A
         
         # Temporarily disable sorting during refresh
         self.device_table.setSortingEnabled(False)
@@ -1211,13 +1718,10 @@ class MainWindow(QMainWindow):
                 
                 # Create auto-reconnect toggle and restore state
                 auto_btn = ToggleButton("AUTO", "MANUAL")
-                # Restore previous auto state or get from storage
-                if dev["busid"] in saved_auto_states:
-                    auto_btn.setChecked(saved_auto_states[dev["busid"]])
-                else:
-                    auto_btn.setChecked(self.get_auto_reconnect_state(ip, dev["busid"]))
+                # Always read from encrypted file for consistent state
+                auto_btn.setChecked(self.get_auto_reconnect_state(ip, dev["busid"], "local"))
                 auto_btn.toggled.connect(
-                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state)
+                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state, "local")
                 )
                 self.device_table.setCellWidget(row, 3, auto_btn)
 
@@ -1266,6 +1770,10 @@ class MainWindow(QMainWindow):
         # Stop auto-reconnect timer
         if hasattr(self, 'auto_reconnect_timer'):
             self.auto_reconnect_timer.stop()
+        
+        # Stop auto-refresh timer
+        if hasattr(self, 'auto_refresh_timer'):
+            self.auto_refresh_timer.stop()
         
         # Stop grace period timer
         if hasattr(self, 'grace_period_timer'):
@@ -1400,9 +1908,9 @@ class MainWindow(QMainWindow):
                 
                 # Create auto-reconnect toggle for remote devices
                 auto_btn = ToggleButton("AUTO", "MANUAL")
-                auto_btn.setChecked(self.get_auto_reconnect_state(ip, dev["busid"]))
+                auto_btn.setChecked(self.get_auto_reconnect_state(ip, dev["busid"], "remote"))
                 auto_btn.toggled.connect(
-                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state)
+                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state, "remote")
                 )
                 self.remote_table.setCellWidget(row, 3, auto_btn)
             client.close()
