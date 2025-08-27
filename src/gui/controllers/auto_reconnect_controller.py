@@ -113,7 +113,7 @@ class AutoReconnectController(QObject):
             f"{self.main_window.auto_reconnect_max_attempts})"
         )
         
-        success = self.main_window.toggle_attach(ip, busid, device_desc, 2)  # 2 = attach
+        success = self.main_window.toggle_attach(ip, busid, device_desc, 2, start_grace_period=False)  # 2 = attach
         
         if success:
             self.main_window.console.append(f"✅ Auto-attach successful: {busid}")

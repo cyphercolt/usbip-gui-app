@@ -20,6 +20,8 @@ from gui.dialogs.about_dialog import AboutDialog
 from gui.dialogs.help_dialog import HelpDialog
 from gui.dialogs.settings_dialog import SettingsDialog
 from gui.controllers.auto_reconnect_controller import AutoReconnectController
+from gui.controllers.device_management_controller import DeviceManagementController
+from gui.controllers.ssh_management_controller import SSHManagementController
 
 IPS_FILE = "ips.enc"
 STATE_FILE = "usbip_state.enc" 
@@ -46,6 +48,10 @@ class MainWindow(QMainWindow):
         sudo_password = "0" * len(sudo_password)
 
         self.ssh_client = None  # SSH client reference
+
+        # Initialize controllers early (before UI setup that references them)
+        self.device_management_controller = DeviceManagementController(self)
+        self.ssh_management_controller = SSHManagementController(self)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -76,11 +82,11 @@ class MainWindow(QMainWindow):
         btn_layout.addWidget(self.refresh_button)
 
         self.ssh_button = QPushButton("SSH Devices")
-        self.ssh_button.clicked.connect(self.prompt_ssh_credentials)
+        self.ssh_button.clicked.connect(self.ssh_management_controller.prompt_ssh_credentials)
         btn_layout.addWidget(self.ssh_button)
 
         self.ssh_disco_button = QPushButton("SSH Disco")
-        self.ssh_disco_button.clicked.connect(self.disconnect_ssh)
+        self.ssh_disco_button.clicked.connect(self.ssh_management_controller.disconnect_ssh)
         self.ssh_disco_button.setVisible(False)
         btn_layout.addWidget(self.ssh_disco_button)
 
@@ -258,7 +264,7 @@ class MainWindow(QMainWindow):
         
         # Auto-refresh timer
         self.auto_refresh_timer = QTimer()
-        self.auto_refresh_timer.timeout.connect(self.auto_refresh_devices)
+        self.auto_refresh_timer.timeout.connect(self.device_management_controller.auto_refresh_devices)
         
         # Grace period timer for manual operations
         self.grace_period_timer = QTimer()
@@ -302,151 +308,36 @@ class MainWindow(QMainWindow):
         return item
 
     def attach_all_devices(self):
-        ip = self.ip_input.currentText()
-        if not ip:
-            self.console.append("No IP selected for Attach All.\n")
-            return
-        
-        attached_count = 0
-        failed_count = 0
-        for row in range(self.device_table.rowCount()):
-            toggle_btn = self.device_table.cellWidget(row, 2)
-            busid_item = self.device_table.item(row, 0)
-            desc_item = self.device_table.item(row, 1)
-            if toggle_btn and not toggle_btn.isChecked() and busid_item and desc_item:
-                # Only attach if not checked
-                busid = busid_item.text()
-                desc = desc_item.text()
-                # Actually perform the attachment
-                success = self.toggle_attach(ip, busid, desc, 2)  # 2 = checked/attached state
-                if success:
-                    attached_count += 1
-                else:
-                    failed_count += 1
-        
-        # Provide detailed feedback
-        if attached_count > 0:
-            self.console.append(f"Successfully attached {attached_count} devices.")
-        if failed_count > 0:
-            self.console.append(f"Failed to attach {failed_count} devices.")
-        if attached_count > 0:
-            self.console.append("Refreshing device list...\n")
-            # Add a small delay to allow usbip commands to complete
-            import time
-            time.sleep(0.5)
-        
-        # Refresh the device table to show updated states
-        self.load_devices()
-        
-        # Start grace period to prevent immediate auto-reconnect after attach all
-        if attached_count > 0:
-            self.start_grace_period()  # Use default grace period duration
+        """Attach all detached devices (delegate to controller)"""
+        self.device_management_controller.attach_all_devices()
 
     def detach_all_devices(self):
-        detached_count = 0
-        failed_count = 0
-        for row in range(self.device_table.rowCount()):
-            toggle_btn = self.device_table.cellWidget(row, 2)
-            busid_item = self.device_table.item(row, 0)
-            desc_item = self.device_table.item(row, 1)
-            if toggle_btn and toggle_btn.isChecked() and busid_item and desc_item:
-                # Only detach if checked
-                busid = busid_item.text()
-                desc = desc_item.text()
-                # Actually perform the detachment
-                success = self.toggle_attach("", busid, desc, 0)  # 0 = unchecked/detached state
-                if success:
-                    detached_count += 1
-                else:
-                    failed_count += 1
-        
-        # Provide detailed feedback
-        if detached_count > 0:
-            self.console.append(f"Successfully detached {detached_count} devices.")
-        if failed_count > 0:
-            self.console.append(f"Failed to detach {failed_count} devices.")
-        if detached_count > 0:
-            self.console.append("Refreshing device list...\n")
-            # Add a small delay to allow usbip commands to complete
-            import time
-            time.sleep(0.5)
-        
-        # Refresh the device table to show updated states
-        self.load_devices()
-        
-        # Start grace period to prevent immediate auto-reconnect
-        if detached_count > 0:
-            self.start_grace_period()  # Use default grace period duration
+        """Detach all attached devices (delegate to controller)"""
+        self.device_management_controller.detach_all_devices()
 
     def unbind_all_devices(self):
-        """Unbind all bound devices on the remote SSH server and refresh tables"""
-        ip = self.ip_input.currentText()
-        username = getattr(self, "last_ssh_username", "")
-        password = getattr(self, "last_ssh_password", "")
-        accept = getattr(self, "last_ssh_accept", False)
-        
-        if not ip or not username or not password:
-            self.console.append("Missing SSH credentials for Unbind All.\n")
-            return
-        
-        # Check rate limiting
-        allowed, remaining_time = self.connection_security.check_ssh_connection_allowed(ip)
-        if not allowed:
-            self.console.append(f"Too many SSH attempts. Try again in {remaining_time} seconds.\n")
-            return
-            
-        try:
-            import paramiko
-            self.connection_security.record_ssh_attempt(ip)
-            client = paramiko.SSHClient()
-            if accept:
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            else:
-                client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=10)
-            
-            # Unbind all bound devices
-            for row in range(self.remote_table.rowCount()):
-                toggle_btn = self.remote_table.cellWidget(row, 2)
-                busid_item = self.remote_table.item(row, 0)
-                if toggle_btn and toggle_btn.isChecked() and busid_item:
-                    busid = busid_item.text()
-                    
-                    # Validate busid format for security
-                    if not SecurityValidator.validate_busid(busid):
-                        self.console.append(f"Invalid busid format: {busid}\n")
-                        continue
-                    
-                    # Use secure command builder
-                    actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password)
-                    if not actual_cmd:
-                        self.console.append(f"Failed to build secure command for busid: {busid}\n")
-                        continue
-                    
-                    safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
-                    stdin, stdout, stderr = client.exec_command(actual_cmd)
-                    output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-                    self.console.append(f"SSH $ {safe_cmd}\n")
-                    if output:
-                        self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
-            
-            client.close()
-            self.console.append("All devices unbound successfully.\n")
-            
-            # Update toggle buttons instead of refreshing entire table
-            for row in range(self.remote_table.rowCount()):
-                toggle_btn = self.remote_table.cellWidget(row, 2)
-                if toggle_btn and toggle_btn.isChecked():
-                    toggle_btn.setChecked(False)  # Set to unbound state
-            
-            # Refresh only the local devices table to show available devices
-            self.load_devices()
-            
-            # Start grace period to prevent immediate auto-reconnect
-            self.start_grace_period()  # Use default grace period duration
-            
-        except Exception as e:
-            self.console.append(f"Error unbinding all devices: {e}\n")
+        """Unbind all bound devices on the remote SSH server (delegate to controller)"""
+        self.device_management_controller.unbind_all_devices()
+
+    def load_devices(self):
+        """Load and display USB/IP devices from remote server (delegate to controller)"""
+        self.device_management_controller.load_devices()
+
+    def detach_local_device(self, port, desc, state):
+        """Detach a local device by port (delegate to controller)"""
+        self.device_management_controller.detach_local_device(port, desc, state)
+
+    def toggle_attach(self, ip, busid, desc, state, start_grace_period=True):
+        """Toggle device attach/detach (delegate to device controller)"""
+        return self.device_management_controller.toggle_attach(ip, busid, desc, state, start_grace_period)
+
+    def parse_usbip_list(self, output):
+        """Parse usbip list output to extract device information (delegate to controller)"""
+        return self.device_management_controller.parse_usbip_list(output)
+
+    def auto_refresh_devices(self):
+        """Auto-refresh device tables (delegate to controller)"""
+        self.device_management_controller.auto_refresh_devices()
 
     def _get_sudo_password(self):
         """Get the deobfuscated sudo password"""
@@ -514,232 +405,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.console.append(f"Error pinging {ip}: Connection failed\n")
 
-    def load_devices(self):
-        # Save auto-reconnect states before clearing the table
-        saved_auto_states = {}
-        ip = self.ip_input.currentText()
-        if ip:
-            for row in range(self.device_table.rowCount()):
-                busid_item = self.device_table.item(row, 0)
-                auto_btn = self.device_table.cellWidget(row, 3)
-                if busid_item and auto_btn and hasattr(auto_btn, 'isChecked'):
-                    busid = busid_item.text()
-                    # Only save if it's not a "Port" entry and has a real auto state
-                    if not busid.startswith("Port") and auto_btn.isEnabled():
-                        auto_state = auto_btn.isChecked()
-                        saved_auto_states[busid] = auto_state
-        
-        # Disable sorting during table population to prevent widget issues
-        self.device_table.setSortingEnabled(False)
-        
-        self.device_table.setRowCount(0)
-        ip = self.ip_input.currentText()
-        if not ip:
-            # Re-enable sorting before returning
-            self.device_table.setSortingEnabled(True)
-            return
-        try:
-            # Get list of attached busids from usbip port
-            port_result = subprocess.run(
-                ["usbip", "port"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            port_output = port_result.stdout
-            attached_busids = set()
-            attached_descs = set()  # Build attached descriptions from port output
-            current_port = None
-            current_busid = None  # Track the busid for the current port
-            for line in port_output.splitlines():
-                line = line.strip()
-                if line.startswith("Port"):
-                    current_port = line.split()[1].replace(":", "")
-                    current_busid = None  # Reset busid for new port
-                elif current_port and line and line[0].isdigit() and '-' in line:
-                    current_busid = line.split()[0]  # This is the busid line
-                    attached_busids.add(current_busid)
-                elif current_port and current_busid and line and ":" in line:
-                    desc = line
-                    attached_descs.add(desc)  # Capture attached device descriptions
-
-            # List remote devices
-            result = subprocess.run(
-                ["usbip", "list", "-r", ip],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            output = result.stdout if result.returncode == 0 else result.stderr
-            self.console.append(f"$ usbip list -r {ip}\n{output}\n")
-            devices = self.parse_usbip_list(output)
-
-            # Add remote devices
-            for dev in devices:
-                row = self.device_table.rowCount()
-                self.device_table.insertRow(row)
-                self.device_table.setItem(row, 0, self.create_table_item_with_tooltip(dev["busid"]))
-                self.device_table.setItem(row, 1, self.create_table_item_with_tooltip(dev["desc"]))
-                
-                # Create toggle button instead of checkbox
-                toggle_btn = ToggleButton("ATTACHED", "DETACHED")
-                toggle_btn.setChecked(dev["desc"] in attached_descs)
-                toggle_btn.toggled.connect(
-                    lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.toggle_attach(ip, busid, desc, 2 if state else 0)
-                )
-                self.device_table.setCellWidget(row, 2, toggle_btn)
-                
-                # Create auto-reconnect toggle button
-                auto_btn = ToggleButton("AUTO", "MANUAL")
-                # Use saved state if available, otherwise read from encrypted file
-                if dev["busid"] in saved_auto_states:
-                    auto_state = saved_auto_states[dev["busid"]]
-                    auto_btn.setChecked(auto_state)
-                else:
-                    auto_state = self.get_auto_reconnect_state(ip, dev["busid"], "local")
-                    auto_btn.setChecked(auto_state)
-                auto_btn.toggled.connect(
-                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state, "local")
-                )
-                self.device_table.setCellWidget(row, 3, auto_btn)
-
-            # Add devices that are attached but no longer in remote list (using mappings)
-            data = self.file_crypto.load_encrypted_file(DEVICE_MAPPING_FILE)
-            mappings = data.get('mappings', {})
-            
-            for remote_busid, mapping_info in mappings.items():
-                port_busid = mapping_info.get('port_busid')
-                
-                # Check if this mapped device is currently attached
-                if port_busid in attached_busids:
-                    # This device is attached but not in remote list - add it
-                    remote_desc = mapping_info.get('remote_desc', 'Unknown Device')
-                    
-                    # Check if we already added this device from the remote list
-                    already_in_table = False
-                    for row in range(self.device_table.rowCount()):
-                        busid_item = self.device_table.item(row, 0)
-                        if busid_item and busid_item.text() == remote_busid:
-                            already_in_table = True
-                            break
-                    
-                    if not already_in_table:
-                        row = self.device_table.rowCount()
-                        self.device_table.insertRow(row)
-                        self.device_table.setItem(row, 0, self.create_table_item_with_tooltip(remote_busid))
-                        self.device_table.setItem(row, 1, self.create_table_item_with_tooltip(remote_desc))
-                        
-                        # Create toggle button (attached state)
-                        toggle_btn = ToggleButton("ATTACHED", "DETACHED")
-                        toggle_btn.setChecked(True)  # It's attached
-                        toggle_btn.toggled.connect(
-                            lambda state, ip=ip, busid=remote_busid, desc=remote_desc: self.toggle_attach(ip, busid, desc, 2 if state else 0)
-                        )
-                        self.device_table.setCellWidget(row, 2, toggle_btn)
-                        
-                        # Create auto-reconnect toggle button with preserved state
-                        auto_btn = ToggleButton("AUTO", "MANUAL")
-                        if remote_busid in saved_auto_states:
-                            auto_state = saved_auto_states[remote_busid]
-                            auto_btn.setChecked(auto_state)
-                        else:
-                            auto_state = self.get_auto_reconnect_state(ip, remote_busid, "local")
-                            auto_btn.setChecked(auto_state)
-                        auto_btn.toggled.connect(
-                            lambda state, ip=ip, busid=remote_busid: self.toggle_auto_reconnect(ip, busid, state, "local")
-                        )
-                        self.device_table.setCellWidget(row, 3, auto_btn)
-
-            # List locally attached devices (usbip port) that aren't in the remote list
-            # Build set of descriptions and busids already added to the table
-            table_descs = set()
-            table_busids = set()
-            for row in range(self.device_table.rowCount()):
-                desc_item = self.device_table.item(row, 1)
-                busid_item = self.device_table.item(row, 0)
-                if desc_item:
-                    table_descs.add(desc_item.text())
-                if busid_item:
-                    # Extract busid from items like "1-1.2" or "Port 00"
-                    busid_text = busid_item.text()
-                    if not busid_text.startswith("Port"):  # Only add actual busids
-                        table_busids.add(busid_text)
-            
-            current_port = None
-            current_busid = None
-            port_to_busid = {}  # Map port to busid
-            for line in port_output.splitlines():
-                line = line.strip()
-                if line.startswith("Port"):
-                    current_port = line.split()[1].replace(":", "")
-                    current_busid = None
-                elif current_port and line and line[0].isdigit() and '-' in line:
-                    current_busid = line.split()[0]
-                    port_to_busid[current_port] = current_busid
-                elif current_port and current_busid and line and ":" in line:
-                    desc = line
-                    # Check if this device is already in the table (by busid or mapping)
-                    remote_busid = self.get_remote_busid_for_port(current_busid)
-                    
-                    # Skip if already in table (either by port busid or remote busid)
-                    already_in_table = (current_busid in table_busids or 
-                                      (remote_busid and remote_busid in table_busids))
-                    
-                    if not already_in_table:
-                        row = self.device_table.rowCount()
-                        self.device_table.insertRow(row)
-                        self.device_table.setItem(row, 0, self.create_table_item_with_tooltip(f"Port {current_port}"))
-                        self.device_table.setItem(row, 1, self.create_table_item_with_tooltip(desc))
-                        
-                        # Create toggle button for local devices
-                        toggle_btn = ToggleButton("ATTACHED", "DETACHED")
-                        toggle_btn.setChecked(True)  # Local devices are already attached
-                        toggle_btn.toggled.connect(
-                            lambda state, port=current_port, desc=desc: self.detach_local_device(port, desc, 0 if not state else 2)
-                        )
-                        self.device_table.setCellWidget(row, 2, toggle_btn)
-                        
-                        # Create auto-reconnect toggle using the original remote busid if available
-                        auto_btn = ToggleButton("AUTO", "MANUAL")
-                        busid_for_auto = remote_busid if remote_busid else current_busid
-                        
-                        # Use saved state if available, otherwise read from encrypted file
-                        if busid_for_auto in saved_auto_states:
-                            auto_state = saved_auto_states[busid_for_auto]
-                            auto_btn.setChecked(auto_state)
-                        else:
-                            auto_state = self.get_auto_reconnect_state(ip, busid_for_auto, "local")
-                            auto_btn.setChecked(auto_state)
-                        auto_btn.toggled.connect(
-                            lambda state, ip=ip, busid=busid_for_auto: self.toggle_auto_reconnect(ip, busid, state, "local")
-                        )
-                        self.device_table.setCellWidget(row, 3, auto_btn)
-        except Exception as e:
-            self.console.append(f"Error loading devices: {e}\n")
-        finally:
-            # Re-enable sorting after table population is complete
-            self.device_table.setSortingEnabled(True)
-
-    def detach_local_device(self, port, desc, state):
-        if state == 0:  # Unchecked (Detach)
-            cmd = ["usbip", "detach", "-p", port]
-            self.console.append(f"$ sudo {' '.join(cmd)}\n")
-            result = self.run_sudo(cmd)
-            if not result:
-                self.console.append("Detach command failed or returned no output.\n")
-
-    def parse_usbip_list(self, output):
-        devices = []
-        lines = output.splitlines()
-        for line in lines:
-            line = line.strip()
-            # Match lines like: 3-2.1: Razer USA, Ltd : unknown product (1532:0077)
-            if line and line[0].isdigit() and ':' in line:
-                busid, rest = line.split(':', 1)
-                desc = rest.strip()
-                devices.append({"busid": busid, "desc": desc})
-        return devices
-
     def _get_sudo_password(self):
         """Get the deobfuscated sudo password"""
         if not self._obfuscated_sudo_password:
@@ -783,89 +448,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.console.append(f"Exception running sudo: {e}\n")
             return None
-
-    def toggle_attach(self, ip, busid, desc, state):
-        if state == 2:  # Checked (Attach)
-            cmd = ["usbip", "attach", "-r", ip, "-b", busid]
-            self.console.append(f"$ sudo {' '.join(cmd)}\n")
-            result = self.run_sudo(cmd)
-            if not result:
-                self.console.append("Attach command failed or returned no output.\n")
-                return False
-            
-            # After successful attach, find which port it was assigned to
-            time.sleep(0.5)  # Give time for device to appear in port list
-            port_result = subprocess.run(
-                ["usbip", "port"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            
-            # Find the newly attached device in port list
-            port_output = port_result.stdout
-            current_port = None
-            port_desc = None
-            port_busid = None
-            
-            for line in port_output.splitlines():
-                line = line.strip()
-                
-                if line.startswith("Port"):
-                    current_port = line.split()[1].replace(":", "")
-                    port_desc = None
-                    port_busid = None
-                elif current_port and line and ":" in line and not line.startswith("Port") and "->" not in line:
-                    # This is a description line
-                    port_desc = line
-                elif current_port and line and "->" in line and line[0].isdigit():
-                    # This is the busid line (e.g., "3-1 -> unknown host...")
-                    port_busid = line.split()[0]
-                    
-                    # Now we have all info - check if this matches our target device
-                    if port_desc:
-                        
-                        if desc in port_desc or desc.split("(")[0].strip() in port_desc:
-                            # Found the device - save the mapping
-                            self.save_device_mapping(busid, desc, current_port, port_busid)
-                            break
-            
-            self.save_state(ip, busid, True)
-            return True
-        elif state == 0:  # Unchecked (Detach)
-            # Remove device mapping when detaching
-            self.remove_device_mapping(busid)
-            
-            # Find the port number for this device description
-            port_result = subprocess.run(
-                ["usbip", "port"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            port_output = port_result.stdout
-            port_num = None
-            current_port = None
-            for line in port_output.splitlines():
-                line = line.strip()
-                if line.startswith("Port"):
-                    current_port = line.split()[1].replace(":", "")
-                # Match by description (exact or partial)
-                elif current_port and line and (desc in line or desc.split("(")[0].strip() in line):
-                    port_num = current_port
-                    break
-            if port_num:
-                cmd = ["usbip", "detach", "-p", port_num]
-                self.console.append(f"$ sudo {' '.join(cmd)}\n")
-                result = self.run_sudo(cmd)
-                if not result:
-                    self.console.append("Detach command failed or returned no output.\n")
-                    return False
-                self.save_state(ip, busid, False)
-                return True
-            else:
-                self.console.append(f"Could not find port for device '{desc}'\n")
-                return False
 
     def load_state(self, ip):
         all_state = self.file_crypto.load_encrypted_file(STATE_FILE)
@@ -1106,51 +688,8 @@ class MainWindow(QMainWindow):
         self.auto_reconnect_controller.update_remote_auto_toggle_state(busid, enabled)
 
     def perform_remote_bind(self, ip, username, password, busid, accept_fingerprint, bind=True):
-        """Perform remote bind/unbind operation and return success status"""
-        import paramiko
-        
-        # Validate busid format for security
-        if not SecurityValidator.validate_busid(busid):
-            return False
-            
-        try:
-            client = paramiko.SSHClient()
-            if accept_fingerprint:
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            else:
-                client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=15)
-            
-            if bind:
-                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(busid, password)
-            else:
-                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password)
-                
-            if not actual_cmd:
-                client.close()
-                return False
-                
-            stdin, stdout, stderr = client.exec_command(actual_cmd)
-            stdout.read()  # Wait for command completion
-            stderr.read()
-            
-            client.close()
-            return True  # Assume success if no exception
-        except Exception:
-            return False
-
-    def auto_refresh_devices(self):
-        """Automatically refresh both local and SSH device tables"""
-        if not self.auto_refresh_enabled:
-            return
-            
-        # Only auto-refresh if we have an IP selected
-        current_ip = self.ip_input.currentText()
-        if not current_ip:
-            return
-            
-        # Refresh all tables silently
-        self.refresh_all_tables()
+        """Perform remote bind/unbind operation (delegate to SSH controller)"""
+        return self.ssh_management_controller.perform_remote_bind(ip, username, password, busid, accept_fingerprint, bind)
 
     def refresh_local_devices_silently(self):
         """Refresh local device table without disrupting auto-reconnect states"""
@@ -1191,7 +730,7 @@ class MainWindow(QMainWindow):
                 text=True
             )
             output = result.stdout if result.returncode == 0 else result.stderr
-            devices = self.parse_usbip_list(output)
+            devices = self.device_management_controller.parse_usbip_list(output)
 
             # Clear and repopulate table
             self.device_table.setRowCount(0)
@@ -1207,7 +746,7 @@ class MainWindow(QMainWindow):
                 toggle_btn = ToggleButton("ATTACHED", "DETACHED")
                 toggle_btn.setChecked(dev["desc"] in attached_descs)
                 toggle_btn.toggled.connect(
-                    lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.toggle_attach(ip, busid, desc, 2 if state else 0)
+                    lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.device_management_controller.toggle_attach(ip, busid, desc, 2 if state else 0)
                 )
                 self.device_table.setCellWidget(row, 2, toggle_btn)
                 
@@ -1244,7 +783,7 @@ class MainWindow(QMainWindow):
                         toggle_btn = ToggleButton("ATTACHED", "DETACHED")
                         toggle_btn.setChecked(True)  # Local devices are already attached
                         toggle_btn.toggled.connect(
-                            lambda state, port=current_port, desc=desc: self.detach_local_device(port, desc, 0 if not state else 2)
+                            lambda state, port=current_port, desc=desc: self.device_management_controller.detach_local_device(port, desc, 0 if not state else 2)
                         )
                         self.device_table.setCellWidget(row, 2, toggle_btn)
                         
@@ -1298,243 +837,45 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def prompt_ssh_credentials(self):
-        from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox
-
-        ip = self.ip_input.currentText()
-        
-        # Validate IP before proceeding
-        if not SecurityValidator.validate_ip_or_hostname(ip):
-            self.show_error("Invalid IP/hostname format.")
-            return
-            
-        ssh_state = self.load_ssh_state()
-        prev_username = ssh_state.get(ip, {}).get("username", "")
-        prev_accept = ssh_state.get(ip, {}).get("accept_fingerprint", False)
-
-        dialog = QDialog(self)
-        dialog.setWindowTitle("SSH Credentials")
-        layout = QFormLayout(dialog)
-
-        username_input = QLineEdit()
-        username_input.setText(prev_username)
-        password_input = QLineEdit()
-        password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        accept_fingerprint = QCheckBox("Accept fingerprint automatically")
-        accept_fingerprint.setChecked(prev_accept)
-
-        layout.addRow("Username:", username_input)
-        layout.addRow("Password:", password_input)
-        layout.addRow(accept_fingerprint)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        layout.addWidget(buttons)
-
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-
-        if dialog.exec():
-            username = username_input.text()
-            password = password_input.text()
-            accept = accept_fingerprint.isChecked()
-            
-            # Validate username format
-            if not SecurityValidator.validate_username(username):
-                self.show_error("Invalid username format. Use only alphanumeric characters, dots, underscores, and hyphens.")
-                return
-            
-            self.save_ssh_state(ip, username, accept)
-            self.last_ssh_username = username
-            self.last_ssh_password = password
-            self.last_ssh_accept = accept
-            self.load_remote_local_devices(username, password, accept)
+        """Prompt for SSH credentials (delegate to SSH controller)"""
+        self.ssh_management_controller.prompt_ssh_credentials()
 
     def load_remote_local_devices(self, username, password, accept_fingerprint):
-        ip = self.ip_input.currentText()
-        
-        # Disable sorting during table population to prevent widget issues
-        self.remote_table.setSortingEnabled(False)
-        
-        self.remote_table.setRowCount(0)
-        
-        # Get attached descriptions from local device table 
-        attached_descs = set()
-        for row in range(self.device_table.rowCount()):
-            desc_item = self.device_table.item(row, 1)
-            if desc_item:
-                desc = desc_item.text()
-                attached_descs.add(desc)
-        
-        if not ip:
-            self.console.append("No IP selected for SSH.\n")
-            return
-        try:
-            client = paramiko.SSHClient()
-            if accept_fingerprint:
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            else:
-                client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=15)  # Increased timeout
-            self.ssh_client = client
-            self.ssh_disco_button.setVisible(True)
-            self.ipd_reset_button.setVisible(True)
-            self.unbind_all_button.setVisible(True)  # Show the unbind all button
-            stdin, stdout, stderr = client.exec_command("usbip list -l")
-            output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-            self.console.append(f"SSH $ usbip list -l\n")
-            if output:
-                self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
-            devices = self.parse_ssh_usbip_list(output)
-            
-            for row, dev in enumerate(devices):
-                self.remote_table.insertRow(row)
-                self.remote_table.setItem(row, 0, self.create_table_item_with_tooltip(dev["busid"]))
-                self.remote_table.setItem(row, 1, self.create_table_item_with_tooltip(dev["desc"]))
-                
-                # Create toggle button for remote devices
-                toggle_btn = ToggleButton("BOUND", "UNBOUND")
-                # Check if this device is currently attached by matching descriptions
-                is_bound = dev["desc"] in attached_descs
-                toggle_btn.setChecked(is_bound)
-                toggle_btn.toggled.connect(
-                    lambda state, ip=ip, username=username, password=password, busid=dev["busid"], accept=accept_fingerprint: 
-                        self.toggle_bind_remote(ip, username, password, busid, accept, 2 if state else 0)
-                )
-                self.remote_table.setCellWidget(row, 2, toggle_btn)
-                
-                # Create auto-reconnect toggle for remote devices
-                auto_btn = ToggleButton("AUTO", "MANUAL")
-                auto_btn.setChecked(self.get_auto_reconnect_state(ip, dev["busid"], "remote"))
-                auto_btn.toggled.connect(
-                    lambda state, ip=ip, busid=dev["busid"]: self.toggle_auto_reconnect(ip, busid, state, "remote")
-                )
-                self.remote_table.setCellWidget(row, 3, auto_btn)
-            client.close()
-        except Exception as e:
-            self.console.append(f"SSH connection failed: Authentication or network error\n")
-            # Hide SSH buttons on error
-            self.ssh_disco_button.setVisible(False)
-            self.ipd_reset_button.setVisible(False)
-            self.unbind_all_button.setVisible(False)
-        finally:
-            # Re-enable sorting after table population is complete
-            self.remote_table.setSortingEnabled(True)
+        """Load remote devices via SSH (delegate to SSH controller)"""
+        self.ssh_management_controller.load_remote_local_devices(username, password, accept_fingerprint)
 
     def toggle_bind_remote(self, ip, username, password, busid, accept_fingerprint, state):
-        import paramiko
-        
-        # Validate busid format for security
-        if not SecurityValidator.validate_busid(busid):
-            self.console.append(f"Invalid busid format: {busid}\n")
-            return
-            
-        try:
-            client = paramiko.SSHClient()
-            if accept_fingerprint:
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            else:
-                client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=15)
-            
-            if state == 2:  # Checked (Bind)
-                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(busid, password)
-                safe_cmd = f"echo [HIDDEN] | sudo -S usbip bind -b {SecurityValidator.sanitize_for_shell(busid)}"
-            elif state == 0:  # Unchecked (Unbind)
-                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password)
-                safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
-            else:
-                client.close()
-                return
-                
-            if not actual_cmd:
-                self.console.append(f"Failed to build secure command for busid: {busid}\n")
-                client.close()
-                return
-                
-            stdin, stdout, stderr = client.exec_command(actual_cmd)
-            output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-            self.console.append(f"SSH $ {safe_cmd}\n")
-            if output:
-                self.console.append(f"{SecurityValidator.sanitize_console_output(output)}\n")
-            
-            client.close()
-            self.load_devices()  # Only refresh local table
-        except Exception as e:
-            self.console.append(f"SSH bind/unbind failed: Connection or authentication error\n")
+        """Toggle remote device binding (delegate to SSH controller)"""
+        self.ssh_management_controller.toggle_bind_remote(ip, username, password, busid, accept_fingerprint, state)
 
     def parse_ssh_usbip_list(self, output):
-        devices = []
-        lines = output.splitlines()
-        busid = None
-        desc = ""
-        for line in lines:
-            line = line.strip()
-            if line.startswith("- busid"):
-                # Example: - busid 2-1.4 (0bda:8153)
-                parts = line.split()
-                busid = parts[2]
-                desc = ""
-            elif busid and line:
-                desc = line
-                devices.append({"busid": busid, "desc": desc})
-                busid = None
-                desc = ""
-        return devices
+        """Parse SSH usbip list output (delegate to SSH controller)"""
+        return self.ssh_management_controller.parse_ssh_usbip_list(output)
 
     def save_remote_device_states(self):
-        """Save the current state of remote device toggle buttons"""
-        states = {}
-        for row in range(self.remote_table.rowCount()):
-            busid_item = self.remote_table.item(row, 0)
-            toggle_btn = self.remote_table.cellWidget(row, 2)
-            if busid_item and toggle_btn:
-                states[busid_item.text()] = toggle_btn.isChecked()
-        return states
+        """Save the current state of remote device toggle buttons (delegate to SSH controller)"""
+        return self.ssh_management_controller.save_remote_device_states()
     
     def restore_remote_device_states(self, saved_states):
-        """Restore the state of remote device toggle buttons"""
-        for row in range(self.remote_table.rowCount()):
-            busid_item = self.remote_table.item(row, 0)
-            toggle_btn = self.remote_table.cellWidget(row, 2)
-            if busid_item and toggle_btn and busid_item.text() in saved_states:
-                toggle_btn.setChecked(saved_states[busid_item.text()])
+        """Restore the state of remote device toggle buttons (delegate to SSH controller)"""
+        self.ssh_management_controller.restore_remote_device_states(saved_states)
 
     def refresh_all_tables(self):
-        # Save current remote device states before refresh
-        saved_remote_states = {}
-        if hasattr(self, 'remote_table'):
-            saved_remote_states = self.save_remote_device_states()
-        
-        self.load_devices()
-        # If you want to use last SSH credentials, store them after successful SSH login
-        if hasattr(self, "last_ssh_username") and hasattr(self, "last_ssh_password") and hasattr(self, "last_ssh_accept"):
-            self.load_remote_local_devices(self.last_ssh_username, self.last_ssh_password, self.last_ssh_accept)
-            # Restore the saved states
-            if saved_remote_states:
-                self.restore_remote_device_states(saved_remote_states)
+        self.device_management_controller.load_devices()
+        # Refresh SSH devices with saved credentials if available
+        self.ssh_management_controller.refresh_with_saved_credentials()
 
     def load_ssh_state(self):
-        return self.file_crypto.load_encrypted_file(SSH_STATE_FILE)
+        """Load SSH state (delegate to SSH controller)"""
+        return self.ssh_management_controller.load_ssh_state()
 
     def save_ssh_state(self, ip, username, accept_fingerprint):
-        state = self.load_ssh_state()
-        state[ip] = {
-            "username": username,
-            "accept_fingerprint": accept_fingerprint
-        }
-        self.file_crypto.save_encrypted_file(SSH_STATE_FILE, state)
+        """Save SSH state (delegate to SSH controller)"""
+        self.ssh_management_controller.save_ssh_state(ip, username, accept_fingerprint)
 
     def disconnect_ssh(self):
-        if self.ssh_client:
-            try:
-                self.ssh_client.close()
-            except Exception:
-                pass
-            self.ssh_client = None
-        self.remote_table.setRowCount(0)
-        self.ssh_disco_button.setVisible(False)
-        self.ipd_reset_button.setVisible(False)
-        self.unbind_all_button.setVisible(False)  # Hide the unbind all button
-        self.console.append("SSH session disconnected.\n")
+        """Disconnect SSH (delegate to SSH controller)"""
+        self.ssh_management_controller.disconnect_ssh()
 
     def reset_usbipd(self):
         ip = self.ip_input.currentText()
