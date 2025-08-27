@@ -4,10 +4,6 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 
 **Note**, Fully Vibe Coded with GitHub Copilot, if you don't like AI, don't use this! I needed an app to send USB over IP that was tailored to my needs, and I am not a coder, so here we are!
 
-## 📷 Screenshots
-<img width="369" height="146" alt="image" src="https://github.com/user-attachments/assets/1a85b6e0-37dd-49c1-92f4-0f50cab4f9bc" />
-<img width="997" height="924" alt="image" src="https://github.com/user-attachments/assets/b22106a0-9404-4fba-8f0b-49efd36aefca" />
-
 
 ## ✨ Features
 
@@ -48,6 +44,11 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 - `usbipd` running on remote servers
 - **Sudo access** for USBIP commands
 - **SSH access** to remote servers
+
+## 📷 Screenshots
+<img width="402" height="230" alt="image" src="https://github.com/user-attachments/assets/d1a8f619-e839-4258-ab44-a5de04e2ea1f" /> <img width="249" height="181" alt="image" src="https://github.com/user-attachments/assets/dab0290b-6e21-4e83-a4ed-0a5b631b574b" />
+<img width="1455" height="933" alt="image" src="https://github.com/user-attachments/assets/aa69553a-b549-4c4b-97bd-50083c746377" /><img width="505" height="628" alt="image" src="https://github.com/user-attachments/assets/994b5d74-ae9b-40d9-b630-52cf7e5f7427" /><img width="543" height="627" alt="image" src="https://github.com/user-attachments/assets/1f65e076-6eeb-4300-91ca-51b5567e4c0a" /><img width="547" height="568" alt="image" src="https://github.com/user-attachments/assets/653ecda5-71c6-49ae-abb3-182d0a801453" />
+
 
 ## 🏗️ Project Structure
 
