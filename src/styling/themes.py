@@ -72,6 +72,10 @@ class ThemeManager:
                 padding: 6px 12px; min-height: 20px; 
             }
             QPushButton:hover { background-color: #e0e0e0; }
+            QCheckBox { color: #000000; }
+            QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #666666; background-color: #ffffff; }
+            QCheckBox::indicator:checked { background-color: #4CAF50; border: 1px solid #4CAF50; }
+            QCheckBox::indicator:hover { border: 2px solid #4CAF50; }
             QLabel { color: #000000; }
             QScrollArea { background-color: #ffffff; }
         """
@@ -90,6 +94,19 @@ class ThemeManager:
                 padding: 6px 12px; min-height: 20px; 
             }
             QPushButton:hover { background-color: #505050; }
+            QCheckBox { color: #ffffff; }
+            QCheckBox::indicator { 
+                width: 16px; 
+                height: 16px; 
+                border: 2px solid #888888; 
+                background-color: #3c3c3c; 
+            }
+            QCheckBox::indicator:checked { 
+                border: 2px solid #ffffff; 
+                background-color: #ffffff;
+            }
+            QCheckBox::indicator:hover { border: 2px solid #66BB6A; }
+            QCheckBox::indicator:unchecked:hover { border: 2px solid #aaaaaa; }
             QLabel { color: #ffffff; }
             QScrollArea { background-color: #2b2b2b; }
         """
@@ -108,6 +125,19 @@ class ThemeManager:
                 padding: 6px 12px; min-height: 20px; 
             }
             QPushButton:hover { background-color: #333333; }
+            QCheckBox { color: #ffffff; }
+            QCheckBox::indicator { 
+                width: 16px; 
+                height: 16px; 
+                border: 2px solid #bbbbbb; 
+                background-color: #111111; 
+            }
+            QCheckBox::indicator:checked { 
+                border: 2px solid #ffffff; 
+                background-color: #ffffff;
+            }
+            QCheckBox::indicator:hover { border: 2px solid #66BB6A; }
+            QCheckBox::indicator:unchecked:hover { border: 2px solid #dddddd; }
             QLabel { color: #ffffff; }
             QScrollArea { background-color: #000000; }
         """

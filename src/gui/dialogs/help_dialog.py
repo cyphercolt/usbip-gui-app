@@ -117,16 +117,6 @@ class HelpDialog(QDialog):
 <li><b>🔵 Blue - Checking:</b> Currently testing connection</li>
 <li><b>⚫ Gray - Unknown:</b> No IP selected or initial state</li>
 </ul>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li><b>🟢 Green - Excellent (≤50ms):</b> Perfect for gaming and real-time applications</li>
-<li><b>🟡 Light Green - Good (51-100ms):</b> Great for most games and applications</li>
-<li><b>🟡 Yellow - Fair (101-150ms):</b> OK for casual gaming, noticeable in fast-paced games</li>
-<li><b>🟠 Orange - High (151-300ms):</b> Poor for gaming, frustrating for real-time tasks</li>
-<li><b>🔴 Red - Very High (>300ms):</b> Unplayable for most games, severe lag</li>
-<li><b>🔴 Red - Connection Issues:</b> Offline, timeout, or connection failed</li>
-<li><b>🔵 Blue - Checking:</b> Currently testing connection</li>
-<li><b>⚫ Gray - Unknown:</b> No IP selected or initial state</li>
-</ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🎨 Theme & Interface:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">

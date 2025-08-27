@@ -2,7 +2,7 @@
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QGroupBox, QFormLayout, QCheckBox, QSpinBox,
-    QLabel, QComboBox, QDialogButtonBox, QHBoxLayout
+    QLabel, QComboBox, QDialogButtonBox, QHBoxLayout, QScrollArea, QWidget
 )
 from PyQt6.QtCore import Qt
 from styling.themes import ThemeManager
@@ -32,30 +32,50 @@ class SettingsDialog(QDialog):
         """Initialize the user interface."""
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.resize(500, 600)
+        self.setMinimumSize(550, 700)
+        self.resize(550, 750)
         
         # Apply initial theme styling
         self.apply_theme_styling()
         
-        layout = QVBoxLayout(self)
+        # Main layout
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(10)
+        
+        # Create scroll area for content
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        # Content widget inside scroll area
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setSpacing(15)
         
         # Auto-Reconnect Group
-        self.create_auto_reconnect_group(layout)
+        self.create_auto_reconnect_group(content_layout)
         
         # Auto-Refresh Group
-        self.create_auto_refresh_group(layout)
+        self.create_auto_refresh_group(content_layout)
         
         # Theme Group
-        self.create_theme_group(layout)
+        self.create_theme_group(content_layout)
         
         # Console Group
-        self.create_console_group(layout)
+        self.create_console_group(content_layout)
         
         # Debug Group
-        self.create_debug_group(layout)
+        self.create_debug_group(content_layout)
         
-        # Dialog buttons
-        self.create_buttons(layout)
+        # Add stretch to push content to top
+        content_layout.addStretch()
+        
+        # Set content widget to scroll area
+        scroll_area.setWidget(content_widget)
+        main_layout.addWidget(scroll_area)
+        
+        # Dialog buttons (outside scroll area, always visible)
+        self.create_buttons(main_layout)
         
     def create_auto_reconnect_group(self, main_layout):
         """Create the auto-reconnect settings group."""
