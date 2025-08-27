@@ -14,8 +14,9 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 ### 🔌 Device Management
 - **Attach/detach** USB devices from remote servers using USBIP
 - **Bind/unbind** USB devices on remote servers via SSH
+- **🔄 Auto-reconnect** for specific devices with customizable settings
 - **Dual-table interface** for local and remote USB devices
-- **Unbind All** button for quick SSH device cleanup
+- **Bulk operations** - Attach All, Detach All, and Unbind All buttons
 - **Service management** - restart and check `usbipd` status remotely
 
 ### 🔒 Security & Privacy
@@ -30,6 +31,9 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 
 ### 🖱️ User Experience
 - **💭 SSH credential remembering** (username & fingerprint per IP)
+- **🔄 Smart auto-reconnect** with per-device configuration and attempt limits
+- **⚙️ Auto-reconnect settings** - customizable intervals and failure handling
+- **🚫 Emergency auto-reconnect disable** - global override for all devices
 - **🧹 Clear console** button for clean output
 - **⚡ Real-time feedback** with comprehensive error handling
 - **🎯 Intuitive PyQt6 interface** with modern design
@@ -140,17 +144,59 @@ python3 src/main.py
 4. **Enter SSH credentials** (username remembered, password never stored)
 
 ### Device Management
-- **✅ Check "Attach"** to attach remote devices locally
-- **✅ Check "Bind"** to make remote devices available for sharing
+- **✅ Toggle "Attach"** to attach remote devices locally
+- **✅ Toggle "Bind"** to make remote devices available for sharing
+- **🔄 Toggle "Auto"** to enable automatic reconnection for specific devices
+- **⚙️ Click "Auto Settings"** to customize reconnection intervals and attempt limits
+- **🚫 Click "Disable Auto-Reconnect"** for emergency stop of all auto-reconnections
+- **⚡ Use "Attach All/Detach All"** for bulk local device operations
+- **⚡ Use "Unbind All"** for bulk remote device operations  
+- **⏸️ Grace period** - Auto-reconnect pauses for 60 seconds after bulk operations
 - **🔄 Click "IPD Reset"** to restart remote usbipd service
 - **🧹 Click "Clear"** to clean console output
-- **⚡ Click "Unbind All"** to quickly unbind all SSH devices
 
 ### Security Features
 - All configuration **automatically encrypted** and stored securely
 - **No passwords stored** - only kept in protected memory during runtime
 - **System-specific encryption** keys prevent data portability attacks
 - **Console output sanitized** to hide sensitive information
+
+### 🔄 Auto-Reconnect Features
+
+The application includes intelligent auto-reconnect functionality for seamless device management:
+
+#### ⚙️ **Per-Device Control**
+- **Individual device toggle** - Enable auto-reconnect for specific devices using the "Auto" column
+- **Visual indicators** - GREEN "AUTO" = enabled, RED "MANUAL" = disabled
+- **Dual operation support** - Works for both ATTACH (local devices) and BIND (remote devices)
+- **Smart detection** - Only attempts reconnection when device becomes disconnected/unbound
+- **State persistence** - Auto-reconnect preferences saved between application sessions
+
+#### 🛡️ **Intelligent Failure Handling**
+- **Attempt limits** - Configurable maximum retry attempts (default: 5)
+- **Auto-disable** - Automatically disables auto-reconnect after max failures to prevent spam
+- **Attempt tracking** - Per-device failure counters with automatic reset on success
+- **Grace period** - Pauses auto-reconnect after manual bulk operations (default: 60s)
+- **Status feedback** - Clear console messages for all auto-reconnect activities
+
+#### ⚙️ **Customizable Settings**
+- **Check interval** - Configure how often to check for disconnected devices (10-300 seconds, default: 30)
+- **Max attempts** - Set maximum reconnection attempts per device (1-20, default: 5)
+- **Grace period** - Set pause duration after manual bulk operations (30-300 seconds, default: 60)
+- **Settings dialog** - User-friendly interface accessible via "Auto Settings" button
+
+#### 🚫 **Emergency Controls**
+- **Global disable** - "Disable Auto-Reconnect" button stops all auto-reconnection immediately
+- **Visual feedback** - Button color changes (RED = disabled, GREEN = enabled)
+- **Persistent state** - Global setting remembered between sessions
+- **Instant effect** - Takes effect immediately without restart
+
+#### 🎯 **Use Cases**
+- **Gaming controllers** - Automatically reconnect wireless dongles that lose connection
+- **Remote USB devices** - Auto-bind devices on SSH servers when they become unbound
+- **Development hardware** - Keep debug devices connected during long sessions  
+- **Home lab equipment** - Maintain connections to critical USB devices
+- **Remote workstations** - Ensure essential peripherals stay connected
 
 ## 🔒 Security Architecture
 
@@ -248,6 +294,15 @@ This safely migrates your existing configuration to encrypted storage.
   vhci_hcd
   usbip_host
   ```
+
+### Auto-Reconnect Issues
+- **"Auto-reconnect not working"** - Check if global auto-reconnect is enabled (button should be RED)
+
+- **"Device keeps failing to reconnect"** - Auto-reconnect disables after max attempts; re-enable manually or check network
+
+- **"Too frequent reconnection attempts"** - Increase check interval in Auto Settings (default: 30 seconds)
+
+- **"Auto button is greyed out"** - This is normal for local devices; auto-reconnect only works for remote devices
 
 ### USBIP Service Setup (Remote Servers)
 On remote servers that will share USB devices:
