@@ -85,24 +85,37 @@ class AboutDialog(QDialog):
         about_content = f"""
 <h3 style="color: {header_color}; margin-top: 0;">✨ Key Features:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🔄 <b>Auto-Reconnect System</b> - Automatically reconnect dropped USB devices</li>
-<li>🔃 <b>Auto-Refresh</b> - Keep device lists updated in real-time</li>
-<li>🔒 <b>Secure State Management</b> - Encrypted storage of settings and device mappings</li>
-<li>🖥️ <b>SSH Integration</b> - Seamless remote USB/IP daemon management</li>
-<li>📊 <b>Device Mapping</b> - Smart correlation between remote and local devices</li>
-<li>⚙️ <b>Advanced Settings</b> - Customizable intervals, grace periods, and more</li>
-<li>🎯 <b>Per-Device Control</b> - Individual auto-reconnect settings per device</li>
-<li>🚀 <b>Bulk Operations</b> - Attach/detach multiple devices with grace period handling</li>
+<li>🔄 <b>Smart Auto-Reconnect System</b> - Intelligent device reconnection with failure handling</li>
+<li>🔃 <b>Enhanced Auto-Refresh</b> - Preserves settings and device states during updates</li>
+<li>🎨 <b>Complete Theme System</b> - 4 beautiful themes (System, Light, Dark, OLED) with full persistence</li>
+<li>🔒 <b>Advanced Security</b> - AES-256 encryption with military-grade memory protection</li>
+<li>🖥️ <b>Seamless SSH Integration</b> - Secure remote USB/IP daemon management</li>
+<li>📊 <b>Intelligent Device Mapping</b> - Smart correlation between remote and local devices</li>
+<li>⚙️ <b>Comprehensive Settings</b> - Customizable intervals, grace periods, and theming</li>
+<li>🎯 <b>Per-Device Control</b> - Individual auto-reconnect settings with visual indicators</li>
+<li>🚀 <b>Robust Bulk Operations</b> - Multi-device operations with grace period handling</li>
+<li>🛡️ <b>Enhanced Reliability</b> - Qt signal blocking prevents unwanted operations</li>
 </ul>
 
-<h3 style="color: {header_color}; margin-top: 20px;">🛠️ Technical Information:</h3>
+<h3 style="color: {header_color}; margin-top: 20px;">🛠️ Technical Excellence:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>Built with <b>PyQt6</b> for modern, responsive UI</li>
-<li><b>AES-256</b> encryption for secure data storage</li>
+<li>Built with <b>PyQt6</b> for modern, responsive UI with enhanced signal handling</li>
+<li><b>AES-256</b> encryption with dynamic salt generation for secure data storage</li>
 <li><b>USB/IP protocol</b> support for kernel-level USB forwarding</li>
 <li><b>Cross-platform</b> compatible (Linux primary support)</li>
-<li><b>Memory-safe</b> password handling with secure cleanup</li>
-<li><b>Dark/Light mode</b> automatic theme detection and adaptation</li>
+<li><b>Memory-safe</b> password handling with advanced obfuscation and secure cleanup</li>
+<li><b>Complete Theming</b> - 4 themes with persistent settings and themed dialogs</li>
+<li><b>Unified Storage</b> - Consistent encrypted file format with atomic operations</li>
+<li><b>Smart Refresh Logic</b> - UI updates preserve user settings and device states</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Major Improvements:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>✅ <b>Signal Blocking</b> - Fixed auto-refresh causing unwanted device operations</li>
+<li>✅ <b>State Persistence</b> - Auto-reconnect settings survive all UI updates and theme changes</li>
+<li>✅ <b>Theme Consistency</b> - All dialogs and components respect selected theme</li>
+<li>✅ <b>Unified Storage</b> - Eliminated duplicate storage methods for consistent data handling</li>
+<li>✅ <b>Enhanced Reliability</b> - Comprehensive error prevention and robust state management</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🔗 Source Code & Updates:</h3>
@@ -116,17 +129,18 @@ class AboutDialog(QDialog):
 
 <h3 style="color: {header_color}; margin-top: 20px;">🏆 Project Highlights:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🎯 <b>Production Ready:</b> Robust error handling and state management</li>
-<li>🔐 <b>Security First:</b> Encrypted storage and secure password handling</li>
-<li>🎨 <b>Modern UI:</b> Responsive design with dark/light mode support</li>
-<li>🔧 <b>Extensible:</b> Clean architecture for future enhancements</li>
-<li>📱 <b>User Friendly:</b> Intuitive interface with comprehensive help system</li>
+<li>🎯 <b>Production Ready:</b> Comprehensive error handling and intelligent state management</li>
+<li>🔐 <b>Security First:</b> Military-grade encryption and secure password handling</li>
+<li>🎨 <b>Beautiful UI:</b> 4 stunning themes with complete theming system</li>
+<li>🔧 <b>Robust Architecture:</b> Enhanced Qt signal handling and unified storage system</li>
+<li>📱 <b>User Friendly:</b> Intuitive interface with comprehensive help and smart refresh</li>
+<li>🛡️ <b>Reliability Focused:</b> Signal blocking and state preservation for stable operation</li>
 </ul>
 
 <div style="margin-top: 30px; padding: 15px; text-align: center; border-top: 2px solid {header_color}; color: {text_color};">
-<p style="margin: 5px 0; font-style: italic;">🚀 {current_year} - Open Source USB/IP Management Solution</p>
-<p style="margin: 5px 0; font-size: 11px; color: {version_color};">Empowering remote USB device access with enterprise-grade reliability</p>
-<p style="margin: 5px 0; font-size: 10px; color: {version_color};">Free and open source software - Built by the community, for the community</p>
+<p style="margin: 5px 0; font-style: italic;">🚀 {current_year} - Enhanced USB/IP Management Solution</p>
+<p style="margin: 5px 0; font-size: 11px; color: {version_color};">Enterprise-grade reliability with comprehensive fixes and improvements</p>
+<p style="margin: 5px 0; font-size: 10px; color: {version_color};">Free and open source software - Continuously improved with user feedback</p>
 </div>
         """
         

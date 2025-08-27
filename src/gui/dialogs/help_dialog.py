@@ -92,6 +92,15 @@ class HelpDialog(QDialog):
 <li><b>Add an IP / Hostname</b> - Enter your remote server's address</li>
 <li><b>Use SSH Devices</b> - Start connection to remote USB/IP daemon</li>
 <li><b>IPD Reset</b> - Refreshes the USBIP Daemon on the remote if needed</li>
+<li><b>Settings</b> - Access theme selection and configuration options</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🎨 Theme & Interface:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>4 Beautiful Themes:</b> System (adaptive), Light, Dark, and OLED (pure black)</li>
+<li><b>Persistent Settings:</b> Your theme choice and preferences are automatically saved</li>
+<li><b>Smart Refresh:</b> Interface updates preserve all your settings and device states</li>
+<li><b>Themed Dialogs:</b> All windows and prompts respect your selected theme</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">✨ Auto-Reconnect & Auto-Refresh Features:</h3>
@@ -114,14 +123,24 @@ class HelpDialog(QDialog):
 
 <h3 style="color: {header_color}; margin-top: 20px;">⚙️ Advanced Features:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li><b>Encrypted Storage:</b> All settings and device mappings are securely stored</li>
-<li><b>Grace Period:</b> Auto-reconnect pauses temporarily after bulk operations</li>
-<li><b>Console Output:</b> Real-time feedback on all operations and status</li>
-<li><b>Persistent State:</b> Device states and settings survive application restarts</li>
+<li><b>Enhanced Security:</b> AES-256 encryption with all settings and device mappings securely stored</li>
+<li><b>Smart Grace Period:</b> Auto-reconnect intelligently pauses after bulk operations</li>
+<li><b>Real-time Console:</b> Comprehensive feedback on all operations and status updates</li>
+<li><b>Robust State Management:</b> Device states and settings survive application restarts and theme changes</li>
+<li><b>Signal Protection:</b> Enhanced Qt handling prevents unwanted operations during refresh</li>
+<li><b>Unified Storage:</b> Consistent encrypted file format ensures reliable data handling</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Improvements:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>✅ <b>Fixed Auto-Refresh Issues:</b> No more unwanted device operations during refresh</li>
+<li>✅ <b>Enhanced State Persistence:</b> Auto-reconnect settings survive all changes</li>
+<li>✅ <b>Complete Theme Support:</b> All dialogs and prompts respect selected theme</li>
+<li>✅ <b>Improved Reliability:</b> Comprehensive error prevention and signal blocking</li>
 </ul>
 
 <p style="margin-top: 25px; padding: 10px; background-color: {tip_bg_color}; border-radius: 5px; border-left: 4px solid {tip_border_color}; color: {text_color};">
-<b>💡 Tip:</b> For detailed technical information and source code, click the <b>About</b> button to access the GitHub repository link.
+<b>💡 Tip:</b> For detailed technical information, recent updates, and source code, click the <b>About</b> button to access comprehensive project details and the GitHub repository.
 </p>
         """
         
