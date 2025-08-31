@@ -2,9 +2,11 @@
 
 import subprocess
 import time
+import platform
 from PyQt6.QtCore import QObject
 from gui.widgets.toggle_button import ToggleButton
 from security.validator import SecurityValidator
+from utils.admin_utils import get_platform_usbip_port_command, is_windows_usbipd_available
 
 
 class DeviceManagementController(QObject):
@@ -35,7 +37,7 @@ class DeviceManagementController(QObject):
             desc_item = self.main_window.device_table.item(row, 1)
             if toggle_btn and not toggle_btn.isChecked() and busid_item and desc_item:
                 # Only attach if not checked
-                busid = busid_item.text()
+                busid = busid_item.text().strip()  # Strip whitespace
                 desc = desc_item.text()
                 # Actually perform the attachment
                 success = self.toggle_attach(ip, busid, desc, 2, start_grace_period=False)  # 2 = checked/attached state
@@ -71,7 +73,7 @@ class DeviceManagementController(QObject):
             desc_item = self.main_window.device_table.item(row, 1)
             if toggle_btn and toggle_btn.isChecked() and busid_item and desc_item:
                 # Only detach if checked
-                busid = busid_item.text()
+                busid = busid_item.text().strip()  # Strip whitespace
                 desc = desc_item.text()
                 # Actually perform the detachment
                 success = self.toggle_attach("", busid, desc, 0, start_grace_period=False)  # 0 = unchecked/detached state
@@ -131,7 +133,7 @@ class DeviceManagementController(QObject):
                 toggle_btn = self.main_window.remote_table.cellWidget(row, 2)
                 busid_item = self.main_window.remote_table.item(row, 0)
                 if toggle_btn and toggle_btn.isChecked() and busid_item:
-                    busid = busid_item.text()
+                    busid = busid_item.text().strip()  # Strip whitespace
                     
                     # Validate busid format for security
                     if not SecurityValidator.validate_busid(busid):
@@ -139,11 +141,12 @@ class DeviceManagementController(QObject):
                         continue
                     
                     # Use secure command builder
-                    actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password)
+                    actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password, remote_execution=True)
                     if not actual_cmd:
                         self.main_window.console.append(f"Failed to build secure command for busid: {busid}\n")
                         continue
                     
+                    # SSH commands always execute on remote Linux server, so always use sudo
                     safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
                     stdin, stdout, stderr = client.exec_command(actual_cmd)
                     output = self.main_window.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
@@ -203,30 +206,83 @@ class DeviceManagementController(QObject):
             return
             
         try:
-            # Get list of attached busids from usbip port
-            port_result = subprocess.run(
-                ["usbip", "port"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=10  # 10 second timeout
-            )
-            port_output = port_result.stdout
-            attached_busids = set()
-            attached_descs = set()  # Build attached descriptions from port output
-            current_port = None
-            current_busid = None  # Track the busid for the current port
-            for line in port_output.splitlines():
-                line = line.strip()
-                if line.startswith("Port"):
-                    current_port = line.split()[1].replace(":", "")
-                    current_busid = None  # Reset busid for new port
-                elif current_port and line and line[0].isdigit() and '-' in line:
-                    current_busid = line.split()[0]  # This is the busid line
-                    attached_busids.add(current_busid)
-                elif current_port and current_busid and line and ":" in line:
-                    desc = line
-                    attached_descs.add(desc)  # Capture attached device descriptions
+            # Get list of attached busids from platform-appropriate command
+            port_output = ""  # Initialize for both branches
+            
+            if platform.system() == "Windows":
+                if not is_windows_usbipd_available():
+                    self.main_window.append_simple_message("⚠️ USB/IP client tools not available. Please install usbip for Windows.")
+                    return
+                
+                port_cmd = get_platform_usbip_port_command()
+                port_result = subprocess.run(
+                    port_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=10
+                )
+                
+                # Parse usbip port output (same format on Windows and Unix)
+                port_output = port_result.stdout
+                attached_busids = set()
+                attached_descs = set()
+                current_port = None
+                current_busid = None
+                for line in port_output.splitlines():
+                    line = line.strip()
+                    if line.startswith("Port"):
+                        current_port = line.split()[1].replace(":", "")
+                        current_busid = None
+                    elif platform.system() == "Windows":
+                        # Windows-specific parsing: extract busid from usbip URL
+                        if current_port and line.startswith("-> usbip://") and "/" in line:
+                            # Extract busid from usbip URL format: -> usbip://192.168.2.184:3240/3-2.3
+                            busid_part = line.split("/")[-1]  # Get the part after the last /
+                            if busid_part and "-" in busid_part:
+                                attached_busids.add(busid_part)
+                                current_busid = busid_part
+                        elif current_port and line and ":" in line and not line.startswith("->"):
+                            # This is a description line
+                            desc = line.strip()
+                            attached_descs.add(desc)
+                    else:
+                        # Linux-specific parsing: use description matching (original logic)
+                        if current_port and line and line[0].isdigit() and '-' in line:
+                            current_busid = line.split()[0]
+                            attached_busids.add(current_busid)
+                        elif current_port and current_busid and line and ":" in line:
+                            desc = line
+                            attached_descs.add(desc)
+                        elif current_port and line and ":" in line and not line.startswith("Port"):
+                            # Linux: Just description line without busid
+                            desc = line.strip()
+                            attached_descs.add(desc)
+                
+            else:
+                # Unix-like systems - use description matching approach
+                port_result = subprocess.run(
+                    ["usbip", "port"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=10  # 10 second timeout
+                )
+                port_output = port_result.stdout
+                attached_busids = set()
+                attached_descs = set()  # Build attached descriptions from port output
+                current_port = None
+                current_busid = None  # Track the busid for the current port
+                for line in port_output.splitlines():
+                    line = line.strip()
+                    if line.startswith("Port"):
+                        current_port = line.split()[1].replace(":", "")
+                        current_busid = None  # Reset busid for new port
+                    elif current_port and line and ":" in line and not line.startswith("Port"):
+                        # Linux: Description line without explicit busid in port output
+                        desc = line.strip()
+                        attached_descs.add(desc)
+                        # For Linux, we'll rely on description matching rather than busid extraction
 
             # List remote devices
             result = subprocess.run(
@@ -244,7 +300,7 @@ class DeviceManagementController(QObject):
             self._add_remote_devices(devices, ip, attached_descs, saved_auto_states)
             
             # Add devices that are attached but no longer in remote list (using mappings)
-            self._add_mapped_devices(ip, attached_busids, saved_auto_states)
+            self._add_mapped_devices(ip, attached_busids, attached_descs, saved_auto_states)
             
             # List locally attached devices (usbip port) that aren't in the remote list
             self._add_local_attached_devices(port_output, ip, saved_auto_states)
@@ -264,7 +320,9 @@ class DeviceManagementController(QObject):
         for dev in devices:
             row = self.main_window.device_table.rowCount()
             self.main_window.device_table.insertRow(row)
-            self.main_window.device_table.setItem(row, 0, self.main_window.create_table_item_with_tooltip(dev["busid"]))
+            # Strip whitespace from busid when storing in table
+            clean_busid = dev["busid"].strip()
+            self.main_window.device_table.setItem(row, 0, self.main_window.create_table_item_with_tooltip(clean_busid))
             self.main_window.device_table.setItem(row, 1, self.main_window.create_table_item_with_tooltip(dev["desc"]))
             
             # Create toggle button instead of checkbox
@@ -275,9 +333,9 @@ class DeviceManagementController(QObject):
             toggle_btn.setChecked(dev["desc"] in attached_descs)
             toggle_btn.blockSignals(False)
             
-            # Now connect the signal handler
+            # Now connect the signal handler - use clean busid
             toggle_btn.toggled.connect(
-                lambda state, ip=ip, busid=dev["busid"], desc=dev["desc"]: self.toggle_attach(ip, busid, desc, 2 if state else 0)
+                lambda state, ip=ip, busid=clean_busid, desc=dev["desc"]: self.toggle_attach(ip, busid, desc, 2 if state else 0)
             )
             self.main_window.device_table.setCellWidget(row, 2, toggle_btn)
             
@@ -301,7 +359,7 @@ class DeviceManagementController(QObject):
             )
             self.main_window.device_table.setCellWidget(row, 3, auto_btn)
 
-    def _add_mapped_devices(self, ip, attached_busids, saved_auto_states):
+    def _add_mapped_devices(self, ip, attached_busids, attached_descs, saved_auto_states):
         """Add devices that are attached but no longer in remote list (using mappings)."""
         data = self.main_window.file_crypto.load_encrypted_file("device_mapping.enc")
         mappings = data.get('mappings', {})
@@ -310,7 +368,15 @@ class DeviceManagementController(QObject):
             port_busid = mapping_info.get('port_busid')
             
             # Check if this mapped device is currently attached
-            if port_busid in attached_busids:
+            # On Windows: use busid matching, on Linux: use description matching from attached_descs
+            if platform.system() == "Windows":
+                is_attached = port_busid in attached_busids
+            else:
+                # On Linux, check if the description is in attached_descs
+                remote_desc = mapping_info.get('remote_desc', '')
+                is_attached = any(remote_desc in desc or desc in remote_desc for desc in attached_descs)
+            
+            if is_attached:
                 # This device is attached but not in remote list - add it
                 remote_desc = mapping_info.get('remote_desc', 'Unknown Device')
                 
@@ -457,14 +523,39 @@ class DeviceManagementController(QObject):
             state: 0 for detach, 2 for attach
             start_grace_period: Whether to start grace period after operation (default True)
         """
+        # Clean up any whitespace from busid
+        busid = busid.strip()
+        
         if state == 2:  # Checked (Attach)
+            # Attach device locally (device should already be bound on remote server)
             cmd = ["usbip", "attach", "-r", ip, "-b", busid]
-            self.main_window.append_verbose_message(f"$ sudo {' '.join(cmd)}\n")
+            if platform.system() == "Windows":
+                self.main_window.append_verbose_message(f"$ {' '.join(cmd)}\n")
+            else:
+                self.main_window.append_verbose_message(f"$ sudo {' '.join(cmd)}\n")
+            
             result = self.main_window.run_sudo(cmd)
-            if not result:
+            if not result or result.returncode != 0:
                 self.main_window.append_simple_message(f"❌ Failed to attach device {desc}")
-                self.main_window.append_verbose_message("Attach command failed or returned no output.\n")
+                if result:
+                    self.main_window.append_verbose_message(f"Attach command failed with exit code {result.returncode}\n")
+                    if result.stderr:
+                        self.main_window.append_verbose_message(f"Error: {result.stderr.strip()}\n")
+                else:
+                    self.main_window.append_verbose_message("Attach command failed or returned no output.\n")
                 return False
+            
+            # Check if attach was actually successful by looking for success message
+            success_detected = False
+            if result.stdout and ("successfully attached" in result.stdout.lower() or "succesfully attached" in result.stdout.lower()):
+                success_detected = True
+            elif result.stderr and ("successfully attached" in result.stderr.lower() or "succesfully attached" in result.stderr.lower()):
+                success_detected = True
+            
+            if not success_detected:
+                self.main_window.append_simple_message(f"❌ Device {desc} attach may have failed - no success confirmation")
+                self.main_window.append_verbose_message("No 'successfully attached' message found in command output.\n")
+                # Don't return False here - continue and check port list
             
             # After successful attach, find which port it was assigned to
             time.sleep(0.5)  # Give time for device to appear in port list
@@ -489,22 +580,39 @@ class DeviceManagementController(QObject):
                     current_port = line.split()[1].replace(":", "")
                     port_desc = None
                     port_busid = None
-                elif current_port and line and ":" in line and not line.startswith("Port") and "->" not in line:
-                    # This is a description line
-                    port_desc = line
-                elif current_port and line and "->" in line and line[0].isdigit():
-                    # This is the busid line (e.g., "3-1 -> unknown host...")
-                    port_busid = line.split()[0]
-                    
-                    # Now we have all info - check if this matches our target device
-                    if port_desc:
+                elif platform.system() == "Windows":
+                    # Windows-specific mapping creation
+                    if current_port and line and ":" in line and not line.startswith("->"):
+                        # This is a description line
+                        port_desc = line
+                    elif current_port and line.startswith("-> usbip://") and "/" in line:
+                        # Extract busid from usbip URL format: -> usbip://192.168.2.184:3240/3-2.3
+                        port_busid = line.split("/")[-1]  # Get the part after the last /
+                        
+                        # Now we have all info - check if this matches our target device
+                        if port_desc:
+                            if desc in port_desc or desc.split("(")[0].strip() in port_desc:
+                                # Found the device - save the mapping
+                                self.main_window.save_device_mapping(busid, desc, current_port, port_busid)
+                                break
+                else:
+                    # Linux-specific mapping creation (description-based)
+                    if current_port and line and ":" in line and not line.startswith("Port"):
+                        # Linux: Just description line, use description for mapping
+                        port_desc = line.strip()
+                        
+                        # For Linux, we match by description and use description as "busid"
                         if desc in port_desc or desc.split("(")[0].strip() in port_desc:
-                            # Found the device - save the mapping
-                            self.main_window.save_device_mapping(busid, desc, current_port, port_busid)
+                            # Found the device - save mapping using description as identifier
+                            self.main_window.save_device_mapping(busid, desc, current_port, port_desc)
                             break
             
             self.main_window.save_state(ip, busid, True)
             self.main_window.append_simple_message(f"✅ Device '{desc}' attached successfully")
+            
+            # Add a small delay before refreshing to ensure mapping is properly saved
+            time.sleep(1.0)
+            
             self.load_devices()  # Refresh device list after successful attach
             if start_grace_period:
                 self.main_window.start_grace_period()  # Prevent auto-refresh interference
@@ -534,7 +642,10 @@ class DeviceManagementController(QObject):
                     break
             if port_num:
                 cmd = ["usbip", "detach", "-p", port_num]
-                self.main_window.append_verbose_message(f"$ sudo {' '.join(cmd)}\n")
+                if platform.system() == "Windows":
+                    self.main_window.append_verbose_message(f"$ {' '.join(cmd)}\n")
+                else:
+                    self.main_window.append_verbose_message(f"$ sudo {' '.join(cmd)}\n")
                 result = self.main_window.run_sudo(cmd)
                 if not result:
                     self.main_window.append_simple_message(f"❌ Failed to detach device '{desc}'")

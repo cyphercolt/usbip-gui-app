@@ -9,6 +9,7 @@ This controller handles all SSH-related operations including:
 """
 
 import paramiko
+import platform
 from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox, QTableWidgetItem
 from ..widgets.toggle_button import ToggleButton
 from security.validator import SecurityValidator, SecureCommandBuilder
@@ -177,14 +178,16 @@ class SSHManagementController:
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(ip, username=username, password=password, timeout=15)
             
-            # Get the sudo password from main window for usbip commands
-            sudo_password = self.main_window._get_sudo_password()
+            # Use SSH password as sudo password for remote Linux commands
+            sudo_password = password
             
             if state == 2:  # Checked (Bind)
-                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(busid, sudo_password)
+                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(busid, sudo_password, remote_execution=True)
+                # SSH commands always execute on remote Linux server, so always use sudo
                 safe_cmd = f"echo [HIDDEN] | sudo -S usbip bind -b {SecurityValidator.sanitize_for_shell(busid)}"
             elif state == 0:  # Unchecked (Unbind)
-                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, sudo_password)
+                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, sudo_password, remote_execution=True)
+                # SSH commands always execute on remote Linux server, so always use sudo
                 safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
             else:
                 client.close()
@@ -236,13 +239,13 @@ class SSHManagementController:
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(ip, username=username, password=password, timeout=15)
             
-            # Get the sudo password from main window for usbip commands
-            sudo_password = self.main_window._get_sudo_password()
+            # Use SSH password as sudo password for remote Linux commands
+            sudo_password = password
             
             if bind:
-                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(busid, sudo_password)
+                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(busid, sudo_password, remote_execution=True)
             else:
-                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, sudo_password)
+                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, sudo_password, remote_execution=True)
                 
             if not actual_cmd:
                 client.close()

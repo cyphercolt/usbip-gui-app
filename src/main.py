@@ -1,10 +1,12 @@
 import sys
+import platform
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QStandardPaths
 from gui.window import MainWindow
 from gui.dialogs.sudo_dialog import SudoPasswordDialog, ThemedMessageBox
 from dependencies.checker import check_dependencies
 from styling.themes import ThemeManager
+from utils.admin_utils import check_and_elevate
 import subprocess
 import os
 
@@ -37,6 +39,11 @@ def apply_theme_to_app(app, theme_name):
 def validate_sudo_password():
     """Validate sudo password before creating the main window"""
     app = QApplication.instance()  # Use the existing app instance
+    
+    # Skip sudo validation on Windows since SSH operations will use SSH password
+    # and local operations don't need sudo
+    if platform.system() == "Windows":
+        return "dummy_password", app
     
     max_attempts = 3
     attempts = 0
@@ -107,6 +114,10 @@ def validate_sudo_password():
 
 def test_sudo_password(password):
     """Test if the provided sudo password is correct"""
+    # On Windows, always return True since sudo is not needed
+    if platform.system() == "Windows":
+        return True
+        
     try:
         proc = subprocess.run(
             ['sudo', '-S', 'true'],  # Simple command that just returns true
@@ -126,6 +137,10 @@ def main():
     #if not check_dependencies():
     #    print("Missing dependencies. Please install them and try again.")
     #    sys.exit(1)
+
+    # Check and elevate to admin privileges on Windows if needed
+    if platform.system() == "Windows":
+        check_and_elevate()
 
     # Create the QApplication first
     app = QApplication(sys.argv) if not QApplication.instance() else QApplication.instance()

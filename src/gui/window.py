@@ -1,5 +1,6 @@
 import json
 import os
+import platform
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QComboBox, QPushButton, QTableWidget, QTableWidgetItem, 
                              QMessageBox, QInputDialog, QTextEdit, QCheckBox, QLineEdit,
@@ -14,6 +15,9 @@ import time
 from security.crypto import FileEncryption, MemoryProtection
 from security.validator import SecurityValidator, SecureCommandBuilder
 from security.rate_limiter import ConnectionSecurity
+from utils.admin_utils import (get_platform_ping_command, format_ping_output_message, 
+                              get_platform_usbip_port_command, get_platform_usbip_list_command,
+                              is_windows_usbipd_available)
 from styling.themes import ThemeManager
 from gui.widgets.toggle_button import ToggleButton
 from gui.dialogs.about_dialog import AboutDialog
@@ -471,15 +475,17 @@ class MainWindow(QMainWindow):
         self.update_ping_status("pinging")
             
         try:
+            ping_cmd = get_platform_ping_command(ip, count=1, timeout=5)
             result = subprocess.run(
-                ["ping", "-c", "1", "-W", "5", ip],
+                ping_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 timeout=10
             )
             output = result.stdout if result.returncode == 0 else result.stderr
-            self.append_verbose_message(f"$ ping -c 1 -W 5 {ip}\n{output}\n")
+            cmd_display = format_ping_output_message(ip, count=1, timeout=5)
+            self.append_verbose_message(f"{cmd_display}\n{output}\n")
             
             if result.returncode == 0:
                 # Extract latency from ping output
@@ -647,17 +653,29 @@ class MainWindow(QMainWindow):
                 self.append_simple_message("✅ IP addresses updated successfully")
 
     def extract_ping_latency(self, ping_output):
-        """Extract latency value from ping output"""
+        """Extract latency value from ping output (supports both Windows and Unix formats)"""
         import re
-        # Look for patterns like "time=8.90 ms" or "time=8.9 ms"
-        match = re.search(r'time=(\d+\.?\d*)\s*ms', ping_output)
-        if match:
-            try:
-                latency = float(match.group(1))
-                # Format to one decimal place for consistency
-                return f"{latency:.1f}"
-            except ValueError:
-                return None
+        
+        if platform.system() == "Windows":
+            # Windows ping output: "Average = 8ms" or "time<1ms" or similar
+            # Look for patterns like "Average = 8ms", "time<1ms", "time=8ms"
+            match = re.search(r'(?:Average\s*=\s*|time[<=]?)(\d+\.?\d*)\s*ms', ping_output, re.IGNORECASE)
+            if match:
+                try:
+                    latency = float(match.group(1))
+                    return f"{latency:.1f}"
+                except ValueError:
+                    return None
+        else:
+            # Unix ping output: "time=8.90 ms"
+            match = re.search(r'time=(\d+\.?\d*)\s*ms', ping_output)
+            if match:
+                try:
+                    latency = float(match.group(1))
+                    return f"{latency:.1f}"
+                except ValueError:
+                    return None
+        
         return None
 
     def update_ping_status(self, status, latency=None, ip=None):
@@ -722,15 +740,17 @@ class MainWindow(QMainWindow):
         self.update_ping_status("pinging")
             
         try:
+            ping_cmd = get_platform_ping_command(ip, count=1, timeout=5)
             result = subprocess.run(
-                ["ping", "-c", "1", "-W", "5", ip],  # Added timeout
+                ping_cmd,  # Added timeout
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 timeout=10  # Process timeout
             )
             output = result.stdout if result.returncode == 0 else result.stderr
-            self.append_verbose_message(f"$ ping -c 1 -W 5 {ip}\n{output}\n")
+            cmd_display = format_ping_output_message(ip, count=1, timeout=5)
+            self.append_verbose_message(f"{cmd_display}\n{output}\n")
             
             if result.returncode == 0:
                 # Extract latency from ping output
@@ -773,14 +793,31 @@ class MainWindow(QMainWindow):
             self.append_simple_message("❌ No sudo password set")
             return None
         try:
-            proc = subprocess.run(
-                ['sudo', '-S'] + cmd,
-                input=sudo_password + '\n',
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False
-            )
+            # On Windows, don't use sudo prefix
+            if platform.system() == "Windows":
+                # For Windows, we need to ensure proper execution context
+                # Convert command list to string for shell execution
+                cmd_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in cmd)
+                
+                proc = subprocess.run(
+                    cmd_str,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False,
+                    shell=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                )
+            else:
+                proc = subprocess.run(
+                    ['sudo', '-S'] + cmd,
+                    input=sudo_password + '\n',
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=False
+                )
+            
             # Clear password from local scope
             sudo_password = "0" * len(sudo_password)
             
@@ -1006,33 +1043,75 @@ class MainWindow(QMainWindow):
         self.device_table.setSortingEnabled(False)
         
         try:
-            # Get current attached devices
-            port_result = subprocess.run(
-                ["usbip", "port"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            port_output = port_result.stdout
-            attached_descs = set()
-            current_port = None
-            for line in port_output.splitlines():
-                line = line.strip()
-                if line.startswith("Port"):
-                    current_port = line.split()[1].replace(":", "")
-                elif current_port and line and ":" in line:
-                    desc = line
-                    attached_descs.add(desc)
+            # Get current attached devices using platform-appropriate command
+            if platform.system() == "Windows":
+                if not is_windows_usbipd_available():
+                    self.append_simple_message("⚠️ Windows USB/IP daemon (usbipd.exe) not found. Local device listing unavailable.")
+                    self.device_table.setSortingEnabled(True)
+                    return
+                
+                port_cmd = get_platform_usbip_port_command()
+                port_result = subprocess.run(
+                    port_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                
+                # Parse Windows usbipd output format
+                attached_descs = set()
+                # Windows usbipd list output is different - parse accordingly
+                # This is a placeholder - actual parsing depends on usbipd output format
+                for line in port_result.stdout.splitlines():
+                    line = line.strip()
+                    # TODO: Add Windows-specific parsing logic based on actual usbipd output
+                    
+            else:
+                # Unix-like systems - existing logic
+                port_result = subprocess.run(
+                    ["usbip", "port"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                port_output = port_result.stdout
+                attached_descs = set()
+                current_port = None
+                for line in port_output.splitlines():
+                    line = line.strip()
+                    if line.startswith("Port"):
+                        current_port = line.split()[1].replace(":", "")
+                    elif current_port and line and ":" in line:
+                        desc = line
+                        attached_descs.add(desc)
 
-            # Get remote devices
-            result = subprocess.run(
-                ["usbip", "list", "-r", ip],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            output = result.stdout if result.returncode == 0 else result.stderr
-            devices = self.device_management_controller.parse_usbip_list(output)
+            # Get remote devices using platform-appropriate command
+            if platform.system() == "Windows":
+                if is_windows_usbipd_available():
+                    list_cmd = get_platform_usbip_list_command(ip)
+                    result = subprocess.run(
+                        list_cmd,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True
+                    )
+                else:
+                    # Fallback: Show warning and empty device list
+                    self.append_simple_message("⚠️ Windows USB/IP daemon not available for remote device listing.")
+                    devices = []
+                    result = type('MockResult', (), {'returncode': 1, 'stdout': '', 'stderr': 'usbipd not available'})()
+            else:
+                # Unix-like systems
+                result = subprocess.run(
+                    ["usbip", "list", "-r", ip],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+            
+            if result.returncode == 0 or platform.system() == "Windows":
+                output = result.stdout if result.returncode == 0 else result.stderr
+                devices = self.device_management_controller.parse_usbip_list(output)
 
             # Clear and repopulate table
             self.device_table.setRowCount(0)
@@ -1213,13 +1292,14 @@ class MainWindow(QMainWindow):
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(ip, username=username, password=password, timeout=15)
             
-            # Restart usbipd using secure command builder
-            actual_cmd = SecureCommandBuilder.build_systemctl_command("restart", "usbipd", password)
+            # Restart usbipd using secure command builder (remote execution)
+            actual_cmd = SecureCommandBuilder.build_systemctl_command("restart", "usbipd", password, remote_execution=True)
             if not actual_cmd:
                 self.console.append("Failed to build secure restart command.\n")
                 client.close()
                 return
                 
+            # SSH commands always execute on remote Linux server, so always use sudo
             safe_cmd = "echo [HIDDEN] | sudo -S systemctl restart usbipd"
             stdin, stdout, stderr = client.exec_command(actual_cmd)
             output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
@@ -1228,8 +1308,9 @@ class MainWindow(QMainWindow):
                 self.append_verbose_message(f"{SecurityValidator.sanitize_console_output(output)}\n")
                 
             # Show status after restart
-            actual_status_cmd = SecureCommandBuilder.build_systemctl_command("status", "usbipd", password)
+            actual_status_cmd = SecureCommandBuilder.build_systemctl_command("status", "usbipd", password, remote_execution=True)
             if actual_status_cmd:
+                # SSH commands always execute on remote Linux server, so always use sudo
                 safe_status_cmd = "echo [HIDDEN] | sudo -S systemctl status usbipd"
                 stdin, stdout, stderr = client.exec_command(actual_status_cmd)
                 status_output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
