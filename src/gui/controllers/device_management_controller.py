@@ -12,6 +12,12 @@ from utils.admin_utils import get_platform_usbip_port_command, is_windows_usbipd
 class DeviceManagementController(QObject):
     """Controller for handling USB/IP device management operations."""
     
+    def get_subprocess_creation_flags(self):
+        """Get subprocess creation flags to hide console windows on Windows"""
+        if platform.system() == "Windows":
+            return subprocess.CREATE_NO_WINDOW
+        return 0
+    
     def __init__(self, main_window):
         """
         Initialize the device management controller.
@@ -21,6 +27,20 @@ class DeviceManagementController(QObject):
         """
         super().__init__()
         self.main_window = main_window
+        
+    def safe_toggle_attach(self, ip, busid, desc, state):
+        """Safely toggle attach with immediate button disabling"""
+        # Immediately disable all buttons to prevent race conditions
+        self.main_window.disable_all_device_buttons()
+        # Call the actual toggle method
+        self.toggle_attach(ip, busid, desc, state)
+        
+    def safe_detach_local_device(self, port, desc, state):
+        """Safely detach local device with immediate button disabling"""
+        # Immediately disable all buttons to prevent race conditions
+        self.main_window.disable_all_device_buttons()
+        # Call the actual detach method
+        self.detach_local_device(port, desc, state)
         
     def attach_all_devices(self):
         """Attach all detached devices."""
@@ -119,6 +139,7 @@ class DeviceManagementController(QObject):
         try:
             import paramiko
             from security.validator import SecurityValidator, SecureCommandBuilder
+            from utils.remote_os_detector import RemoteOSDetector
             
             self.main_window.connection_security.record_ssh_attempt(ip)
             client = paramiko.SSHClient()
@@ -127,6 +148,10 @@ class DeviceManagementController(QObject):
             else:
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(ip, username=username, password=password, timeout=10)
+            
+            # Get remote OS type from SSH controller if available
+            remote_os_type = getattr(self.main_window.ssh_management_controller, 'remote_os_type', 'linux')
+            remote_has_usbipd = getattr(self.main_window.ssh_management_controller, 'remote_has_usbipd', False)
             
             # Unbind all bound devices
             for row in range(self.main_window.remote_table.rowCount()):
@@ -140,14 +165,22 @@ class DeviceManagementController(QObject):
                         self.main_window.console.append(f"Invalid busid format: {busid}\n")
                         continue
                     
-                    # Use secure command builder
-                    actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password, remote_execution=True)
+                    # Use appropriate command based on remote OS type
+                    if remote_os_type == 'windows' and remote_has_usbipd:
+                        # Windows usbipd command
+                        actual_cmd = RemoteOSDetector.get_remote_usbip_unbind_command(
+                            remote_os_type, busid, remote_has_usbipd
+                        )
+                        safe_cmd = actual_cmd  # No password hiding needed for Windows usbipd
+                    else:
+                        # Linux/Unix system - use sudo with password
+                        actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(busid, password, remote_execution=True)
+                        safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
+                    
                     if not actual_cmd:
                         self.main_window.console.append(f"Failed to build secure command for busid: {busid}\n")
                         continue
                     
-                    # SSH commands always execute on remote Linux server, so always use sudo
-                    safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
                     stdin, stdout, stderr = client.exec_command(actual_cmd)
                     output = self.main_window.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
                     self.main_window.append_verbose_message(f"SSH $ {safe_cmd}\n")
@@ -155,7 +188,10 @@ class DeviceManagementController(QObject):
                         self.main_window.append_verbose_message(f"{SecurityValidator.sanitize_console_output(output)}\n")
             
             client.close()
-            self.main_window.append_simple_message("✅ All devices unbound successfully")
+            if remote_os_type == 'windows' and remote_has_usbipd:
+                self.main_window.append_simple_message("✅ All devices unbound successfully (Windows usbipd)")
+            else:
+                self.main_window.append_simple_message("✅ All devices unbound successfully")
             
             # Update toggle buttons and save states to persistent storage
             for row in range(self.main_window.remote_table.rowCount()):
@@ -220,7 +256,8 @@ class DeviceManagementController(QObject):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    timeout=10
+                    timeout=10,
+                    creationflags=self.get_subprocess_creation_flags()
                 )
                 
                 # Parse usbip port output (same format on Windows and Unix)
@@ -266,7 +303,8 @@ class DeviceManagementController(QObject):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    timeout=10  # 10 second timeout
+                    timeout=10,  # 10 second timeout
+                    creationflags=self.get_subprocess_creation_flags()
                 )
                 port_output = port_result.stdout
                 attached_busids = set()
@@ -290,14 +328,15 @@ class DeviceManagementController(QObject):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=15  # 15 second timeout for remote connections
+                timeout=15,  # 15 second timeout for remote connections
+                creationflags=self.get_subprocess_creation_flags()
             )
             output = result.stdout if result.returncode == 0 else result.stderr
             self.main_window.append_verbose_message(f"$ usbip list -r {ip}\n{output}\n")
             devices = self.parse_usbip_list(output)
 
             # Add remote devices
-            self._add_remote_devices(devices, ip, attached_descs, saved_auto_states)
+            self._add_remote_devices(devices, ip, attached_descs, attached_busids, saved_auto_states)
             
             # Add devices that are attached but no longer in remote list (using mappings)
             self._add_mapped_devices(ip, attached_busids, attached_descs, saved_auto_states)
@@ -315,7 +354,7 @@ class DeviceManagementController(QObject):
             # Re-enable sorting after table population is complete
             self.main_window.device_table.setSortingEnabled(True)
 
-    def _add_remote_devices(self, devices, ip, attached_descs, saved_auto_states):
+    def _add_remote_devices(self, devices, ip, attached_descs, attached_busids, saved_auto_states):
         """Add remote devices to the device table."""
         for dev in devices:
             row = self.main_window.device_table.rowCount()
@@ -330,12 +369,14 @@ class DeviceManagementController(QObject):
             
             # Set initial state WITHOUT triggering signal
             toggle_btn.blockSignals(True)
-            toggle_btn.setChecked(dev["desc"] in attached_descs)
+            # Use busid matching instead of description matching for more reliable state detection
+            is_attached = clean_busid in attached_busids
+            toggle_btn.setChecked(is_attached)
             toggle_btn.blockSignals(False)
             
             # Now connect the signal handler - use clean busid
             toggle_btn.toggled.connect(
-                lambda state, ip=ip, busid=clean_busid, desc=dev["desc"]: self.toggle_attach(ip, busid, desc, 2 if state else 0)
+                lambda state, ip=ip, busid=clean_busid, desc=dev["desc"]: self.safe_toggle_attach(ip, busid, desc, 2 if state else 0)
             )
             self.main_window.device_table.setCellWidget(row, 2, toggle_btn)
             
@@ -456,6 +497,32 @@ class DeviceManagementController(QObject):
                 port_to_busid[current_port] = current_busid
             elif current_port and current_busid and line and ":" in line:
                 desc = line
+                
+                # Check if this is a Windows "unknown product" and we have a stored description
+                ip = self.main_window.ip_input.currentText()
+                self.main_window.append_verbose_message(f"🔍 Local device debug - Port: {current_port}, Busid: {current_busid}, Desc: '{desc}'")
+                
+                if "unknown product" in desc.lower() and ip:
+                    # Try to get the remote busid for this port to look up the Windows description
+                    remote_busid = self.main_window.get_remote_busid_for_port(current_busid)
+                    self.main_window.append_verbose_message(f"🔍 Found 'unknown product', looking up remote busid for {current_busid}: {remote_busid}")
+                    
+                    if remote_busid:
+                        stored_desc = self.main_window.get_windows_device_description(ip, remote_busid)
+                        self.main_window.append_verbose_message(f"🔍 Stored description for {remote_busid}: '{stored_desc}'")
+                        
+                        if stored_desc:
+                            # Use the stored Windows description instead of "unknown product"
+                            desc = stored_desc
+                            self.main_window.append_verbose_message(f"🪟 Using stored Windows description for local device {current_busid}: {desc}")
+                    else:
+                        self.main_window.append_verbose_message(f"🔍 No remote busid mapping found for {current_busid}")
+                else:
+                    if "unknown product" not in desc.lower():
+                        self.main_window.append_verbose_message(f"🔍 'unknown product' not found in desc: '{desc.lower()}'")
+                    if not ip:
+                        self.main_window.append_verbose_message(f"🔍 No IP address available")
+                
                 # Check if this device is already in the table (by busid or mapping)
                 remote_busid = self.main_window.get_remote_busid_for_port(current_busid)
                 
@@ -479,7 +546,7 @@ class DeviceManagementController(QObject):
                     
                     # Now connect the signal handler
                     toggle_btn.toggled.connect(
-                        lambda state, port=current_port, desc=desc: self.detach_local_device(port, desc, 0 if not state else 2)
+                        lambda state, port=current_port, desc=desc: self.safe_detach_local_device(port, desc, 0 if not state else 2)
                     )
                     self.main_window.device_table.setCellWidget(row, 2, toggle_btn)
                     
@@ -559,12 +626,14 @@ class DeviceManagementController(QObject):
             
             # After successful attach, find which port it was assigned to
             time.sleep(0.5)  # Give time for device to appear in port list
+            port_cmd = get_platform_usbip_port_command()
             port_result = subprocess.run(
-                ["usbip", "port"],
+                port_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=10  # 10 second timeout
+                timeout=10,  # 10 second timeout
+                creationflags=self.get_subprocess_creation_flags()
             )
             
             # Find the newly attached device in port list
@@ -616,30 +685,57 @@ class DeviceManagementController(QObject):
             self.load_devices()  # Refresh device list after successful attach
             if start_grace_period:
                 self.main_window.start_grace_period()  # Prevent auto-refresh interference
+            
+            # Windows-specific: Add extra delay after attach to prevent kernel conflicts
+            if platform.system() == "Windows":
+                self.main_window.append_simple_message("⏳ Waiting for Windows USB subsystem to stabilize...")
+                time.sleep(5.0)  # 5 seconds for Windows to fully process USB connection
+                self.main_window.append_simple_message("✅ USB subsystem ready - operations unlocked")
+            
+            # Re-enable all buttons after successful attach
+            self.main_window.enable_all_device_buttons()
             return True
         elif state == 0:  # Unchecked (Detach)
-            # Remove device mapping when detaching
-            self.main_window.remove_device_mapping(busid)
-            
-            # Find the port number for this device description
-            port_result = subprocess.run(
-                ["usbip", "port"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=10  # 10 second timeout
-            )
-            port_output = port_result.stdout
+            # Get the stored port mapping for this device
+            device_mapping = self.main_window.get_device_mapping(busid)
             port_num = None
-            current_port = None
-            for line in port_output.splitlines():
-                line = line.strip()
-                if line.startswith("Port"):
-                    current_port = line.split()[1].replace(":", "")
-                # Match by description (exact or partial)
-                elif current_port and line and (desc in line or desc.split("(")[0].strip() in line):
-                    port_num = current_port
-                    break
+            
+            if device_mapping:
+                # Use stored port number from mapping
+                port_num = device_mapping.get('port_number')
+                self.main_window.append_verbose_message(f"🔗 Found stored mapping for {busid}: port {port_num}")
+            else:
+                # Fallback: try to find the port by parsing current port output
+                self.main_window.append_verbose_message(f"⚠️ No stored mapping found for {busid}, attempting port detection...")
+                port_cmd = get_platform_usbip_port_command()
+                port_result = subprocess.run(
+                    port_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=10,  # 10 second timeout
+                    creationflags=self.get_subprocess_creation_flags()
+                )
+                port_output = port_result.stdout
+                current_port = None
+                for line in port_output.splitlines():
+                    line = line.strip()
+                    if line.startswith("Port"):
+                        current_port = line.split()[1].replace(":", "")
+                    # For Windows: also try matching by VID:PID from the description
+                    elif current_port and line:
+                        # Extract VID:PID from description if present
+                        if "(" in desc and ":" in desc:
+                            vid_pid = desc.split("(")[-1].split(")")[0]
+                            if ":" in vid_pid and vid_pid.lower() in line.lower():
+                                port_num = current_port
+                                self.main_window.append_verbose_message(f"🔍 Matched by VID:PID {vid_pid} to port {port_num}")
+                                break
+                        # Fallback: try partial description match
+                        if desc in line or desc.split("(")[0].strip() in line:
+                            port_num = current_port
+                            self.main_window.append_verbose_message(f"🔍 Matched by description to port {port_num}")
+                            break
             if port_num:
                 cmd = ["usbip", "detach", "-p", port_num]
                 if platform.system() == "Windows":
@@ -650,28 +746,68 @@ class DeviceManagementController(QObject):
                 if not result:
                     self.main_window.append_simple_message(f"❌ Failed to detach device '{desc}'")
                     self.main_window.append_verbose_message("Detach command failed or returned no output.\n")
+                    
+                    # Re-enable all buttons after failed detach
+                    self.main_window.enable_all_device_buttons()
                     return False
+                
+                # Remove device mapping after successful detach
+                self.main_window.remove_device_mapping(busid)
+                
                 self.main_window.save_state(ip, busid, False)
                 self.main_window.append_simple_message(f"✅ Device '{desc}' detached successfully")
-                self.load_devices()  # Refresh device list after successful detach
+                self.load_devices()  # Initial refresh after successful detach
                 if start_grace_period:
                     self.main_window.start_grace_period()  # Prevent auto-refresh interference
+                
+                # Small delay to let Windows process the USB detach
+                time.sleep(1.0)  # Just 1 second for USB state to update
+                
+                # Final refresh to ensure device appears in local list
+                self.load_devices()
+                
+                # Re-enable all buttons after successful detach
+                self.main_window.enable_all_device_buttons()
                 return True
             else:
                 self.main_window.append_simple_message(f"❌ Could not find port for device '{desc}'")
                 self.main_window.append_verbose_message(f"Could not find port for device '{desc}'\n")
+                
+                # Re-enable all buttons after failed detach
+                self.main_window.enable_all_device_buttons()
                 return False
 
     def parse_usbip_list(self, output):
         """Parse usbip list output to extract device information."""
         devices = []
         lines = output.splitlines()
+        ip = self.main_window.ip_input.currentText()
+        
         for line in lines:
             line = line.strip()
             # Match lines like: 3-2.1: Razer USA, Ltd : unknown product (1532:0077)
             if line and line[0].isdigit() and ':' in line:
                 busid, rest = line.split(':', 1)
+                busid = busid.strip()  # Remove any trailing spaces from busid
                 desc = rest.strip()
+                
+                self.main_window.append_verbose_message(f"🔍 Remote device debug - Busid: '{busid}', Desc: '{desc}'")
+                
+                # Check if this is a Windows "unknown product" and we have a stored description
+                if "unknown product" in desc.lower() and ip:
+                    stored_desc = self.main_window.get_windows_device_description(ip, busid)
+                    self.main_window.append_verbose_message(f"🔍 Found 'unknown product', checking stored desc for {busid}: '{stored_desc}'")
+                    
+                    if stored_desc:
+                        # Use the stored Windows description instead of "unknown product"
+                        desc = stored_desc
+                        self.main_window.append_verbose_message(f"🪟 Using stored Windows description for {busid}: {desc}")
+                    else:
+                        self.main_window.append_verbose_message(f"🔍 No stored description found for {busid}")
+                else:
+                    if "unknown product" not in desc.lower():
+                        self.main_window.append_verbose_message(f"🔍 'unknown product' not found in remote desc: '{desc.lower()}'")
+                
                 devices.append({"busid": busid, "desc": desc})
         return devices
 

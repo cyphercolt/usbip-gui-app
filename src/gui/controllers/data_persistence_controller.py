@@ -35,6 +35,7 @@ class DataPersistenceController:
     IP_LIST_FILE = "ips.enc"
     AUTO_RECONNECT_FILE = "auto_reconnect.enc"
     DEVICE_MAPPING_FILE = "device_mapping.enc"
+    WINDOWS_DEVICE_DESCRIPTIONS_FILE = "windows_device_descriptions.enc"
     
     def __init__(self, main_window):
         self.main_window = main_window
@@ -222,6 +223,36 @@ class DataPersistenceController:
             if mapping_info.get('port_busid') == port_busid:
                 return remote_busid
         return None
+
+    # ==================== Windows Device Descriptions ====================
+    
+    def save_windows_device_description(self, ip, busid, description):
+        """Save Windows device description for later use when displaying 'unknown product'"""
+        data = self.main_window.file_crypto.load_encrypted_file(self.WINDOWS_DEVICE_DESCRIPTIONS_FILE)
+        if 'descriptions' not in data:
+            data['descriptions'] = {}
+        if ip not in data['descriptions']:
+            data['descriptions'][ip] = {}
+        
+        # Store: IP -> busid -> description
+        data['descriptions'][ip][busid] = description
+        self.main_window.file_crypto.save_encrypted_file(self.WINDOWS_DEVICE_DESCRIPTIONS_FILE, data)
+        self.main_window.console.append(f"🔧 Stored Windows description for {ip}/{busid}: '{description}'")
+
+    def get_windows_device_description(self, ip, busid):
+        """Get stored Windows device description for a busid"""
+        data = self.main_window.file_crypto.load_encrypted_file(self.WINDOWS_DEVICE_DESCRIPTIONS_FILE)
+        descriptions = data.get('descriptions', {})
+        result = descriptions.get(ip, {}).get(busid)
+        self.main_window.console.append(f"🔧 Retrieved Windows description for {ip}/{busid}: '{result}'")
+        return result
+
+    def clear_windows_device_descriptions(self, ip):
+        """Clear all Windows device descriptions for an IP (when refreshing)"""
+        data = self.main_window.file_crypto.load_encrypted_file(self.WINDOWS_DEVICE_DESCRIPTIONS_FILE)
+        if 'descriptions' in data and ip in data['descriptions']:
+            del data['descriptions'][ip]
+            self.main_window.file_crypto.save_encrypted_file(self.WINDOWS_DEVICE_DESCRIPTIONS_FILE, data)
 
     # ==================== Device State Management ====================
     

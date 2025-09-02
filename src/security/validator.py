@@ -167,3 +167,34 @@ class SecureCommandBuilder:
             # Remote execution or local Unix - build systemctl command
             safe_password = SecurityValidator.sanitize_for_shell(password)
             return f"echo {safe_password} | sudo -S systemctl {action} {service}"
+
+    @staticmethod
+    def build_modprobe_command(modules: str, password: str, remote_execution: bool = False) -> Optional[str]:
+        """Build a secure modprobe command
+        
+        Args:
+            modules: The kernel modules to load (space-separated)
+            password: The sudo password
+            remote_execution: If True, always build the command (for SSH execution on remote Linux)
+                            If False, check local platform compatibility
+        """
+        # Validate modules - only allow specific USB/IP modules
+        allowed_modules = {'usbip_host', 'usbip_core', 'vhci_hcd'}
+        module_list = modules.split()
+        
+        for module in module_list:
+            if module not in allowed_modules:
+                return None
+        
+        # Sanitize module names for shell
+        safe_modules = ' '.join(SecurityValidator.sanitize_for_shell(module) for module in module_list)
+        
+        # For remote execution (SSH), always build the command regardless of local platform
+        # For local execution, check if modprobe is available (not on Windows)
+        if not remote_execution and platform.system() == "Windows":
+            # Local Windows execution - modprobe not available
+            return None
+        else:
+            # Remote execution or local Unix - build modprobe command
+            safe_password = SecurityValidator.sanitize_for_shell(password)
+            return f"echo {safe_password} | sudo -S modprobe {safe_modules}"

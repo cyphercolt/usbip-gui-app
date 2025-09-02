@@ -58,6 +58,9 @@ pip-delete-this-directory.txt
 # pytest cache
 .pytest_cache/
 
+# Test files and folders
+tests/
+
 # Coverage reports
 htmlcov/
 .coverage

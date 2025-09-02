@@ -2,5 +2,9 @@ PyQt6>=6.0.0
 paramiko>=2.7.0
 cryptography>=3.4.0
 
+# Build tools (optional - for creating executables)
+pyinstaller>=5.0.0
+
 # System requirements (not installed by pip):
 # - usbip (install via your Linux package manager)
+# - For Windows: USB/IP client tools from vadimgrn/usbip-win2

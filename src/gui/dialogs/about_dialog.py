@@ -59,7 +59,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label)
 
         # Version and description
-        version_label = QLabel("Version 2.1.0 - Advanced USB/IP Management Tool with Gaming Features")
+        version_label = QLabel("Version 2.2.0 - Advanced USB/IP Management Tool with Cross-Platform Service Management")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"font-size: 12px; color: {version_color}; margin-bottom: 15px;")
         layout.addWidget(version_label)
@@ -95,6 +95,20 @@ class AboutDialog(QDialog):
 <li>🎯 <b>Per-Device Control</b> - Individual auto-reconnect settings with visual indicators</li>
 <li>🚀 <b>Robust Bulk Operations</b> - Multi-device operations with grace period handling</li>
 <li>🛡️ <b>Enhanced Reliability</b> - Qt signal blocking prevents unwanted operations</li>
+<li>🐧 <b>Linux Service Management</b> - Comprehensive USB/IP daemon control with real-time status</li>
+<li>🔧 <b>Cross-Platform Service Support</b> - Windows usbipd and Linux usbipd management</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🐧 Linux Service Management Features:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>🔄 <b>Real-time Service Status</b> - Live monitoring of USB/IP daemon state with chronological log analysis</li>
+<li>⚡ <b>Smart Status Detection</b> - Prioritizes actual listening ports over systemctl transitional states</li>
+<li>🚀 <b>Start/Stop Daemon Control</b> - Secure systemctl operations with proper authentication</li>
+<li>🔧 <b>Kernel Module Management</b> - Load/unload USB/IP modules (usbip_host, usbip_core, vhci_hcd)</li>
+<li>🤖 <b>Auto-start Configuration</b> - Enable/disable daemon auto-start on boot</li>
+<li>🛡️ <b>Secure Command Execution</b> - All operations use validated sudo commands with proper escaping</li>
+<li>📊 <b>Installation Verification</b> - Checks USB/IP tools availability and version information</li>
+<li>🔄 <b>Intelligent Status Refresh</b> - Chronological analysis prevents false status reports</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🎮 Gaming & Performance Features:</h3>
@@ -123,6 +137,12 @@ class AboutDialog(QDialog):
 
 <h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Major Improvements:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>✅ <b>Linux USB/IP Service Management</b> - Complete daemon control with real-time status monitoring</li>
+<li>✅ <b>Intelligent Status Detection</b> - Chronological log analysis and listening port prioritization</li>
+<li>✅ <b>Cross-Platform Service Support</b> - Unified interface for Windows and Linux USB/IP services</li>
+<li>✅ <b>Enhanced Device Operation Reliability</b> - Fixed port mapping for detach operations</li>
+<li>✅ <b>Optimized Performance</b> - Reduced Windows USB subsystem delays for faster operations</li>
+<li>✅ <b>Auto-refresh After Operations</b> - Device lists automatically update after attach/detach</li>
 <li>✅ <b>Gaming-Focused Ping System</b> - Real-time latency monitoring with color-coded performance indicators</li>
 <li>✅ <b>Enhanced Console System</b> - Verbose mode for debugging, simple mode for clean output</li>
 <li>✅ <b>Safe IP Management</b> - Prevents app hangs with dedicated IP management dialog</li>

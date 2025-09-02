@@ -24,6 +24,8 @@ from gui.dialogs.about_dialog import AboutDialog
 from gui.dialogs.help_dialog import HelpDialog
 from gui.dialogs.settings_dialog import SettingsDialog
 from gui.dialogs.ip_management_dialog import IPManagementDialog
+from gui.dialogs.usbipd_service_dialog import USBIPDServiceDialog
+from gui.dialogs.linux_usbip_service_dialog import LinuxUSBIPServiceDialog
 from gui.controllers.auto_reconnect_controller import AutoReconnectController
 from gui.controllers.device_management_controller import DeviceManagementController
 from gui.controllers.ssh_management_controller import SSHManagementController
@@ -34,6 +36,14 @@ STATE_FILE = "usbip_state.enc"
 SSH_STATE_FILE = "ssh_state.enc"
 AUTO_RECONNECT_FILE = "auto_reconnect.enc"
 DEVICE_MAPPING_FILE = "device_mapping.enc"
+
+
+def get_subprocess_creation_flags():
+    """Get subprocess creation flags to hide console windows on Windows"""
+    if platform.system() == "Windows":
+        # Hide console window for GUI applications
+        return subprocess.CREATE_NO_WINDOW
+    return 0
 
 
 class MainWindow(QMainWindow):
@@ -149,10 +159,10 @@ class MainWindow(QMainWindow):
         self.ssh_disco_button.setVisible(False)
         btn_layout.addWidget(self.ssh_disco_button)
 
-        self.ipd_reset_button = QPushButton("IPD Reset")
-        self.ipd_reset_button.clicked.connect(self.reset_usbipd)
-        self.ipd_reset_button.setVisible(False)
-        btn_layout.addWidget(self.ipd_reset_button)
+        self.linux_usbip_service_button = QPushButton("Manage USB/IP Service")
+        self.linux_usbip_service_button.clicked.connect(self.open_linux_usbip_service_dialog)
+        self.linux_usbip_service_button.setVisible(False)
+        btn_layout.addWidget(self.linux_usbip_service_button)
 
         # Auto-reconnect controls
         self.auto_reconnect_enabled = True
@@ -230,10 +240,17 @@ class MainWindow(QMainWindow):
         self.unbind_all_button = QPushButton("Unbind All")
         self.unbind_all_button.clicked.connect(self.unbind_all_devices)
         self.unbind_all_button.setVisible(False)  # Initially hidden
+        
+        # Windows usbipd service management button
+        self.usbipd_service_button = QPushButton("Manage usbipd Service")
+        self.usbipd_service_button.clicked.connect(self.open_usbipd_service_dialog)
+        self.usbipd_service_button.setVisible(False)  # Initially hidden
+        
         remote_btns_widget = QWidget()
         remote_btns_layout = QHBoxLayout()
         remote_btns_layout.addStretch()
         remote_btns_layout.addWidget(self.unbind_all_button)
+        remote_btns_layout.addWidget(self.usbipd_service_button)
         remote_btns_widget.setLayout(remote_btns_layout)
         remote_layout.addWidget(remote_btns_widget)
         remote_widget.setLayout(remote_layout)
@@ -481,7 +498,8 @@ class MainWindow(QMainWindow):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=10
+                timeout=10,
+                creationflags=get_subprocess_creation_flags()
             )
             output = result.stdout if result.returncode == 0 else result.stderr
             cmd_display = format_ping_output_message(ip, count=1, timeout=5)
@@ -570,7 +588,8 @@ class MainWindow(QMainWindow):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                timeout=5  # Shorter process timeout
+                timeout=5,  # Shorter process timeout
+                creationflags=get_subprocess_creation_flags()
             )
             
             if result.returncode == 0:
@@ -806,7 +825,7 @@ class MainWindow(QMainWindow):
                     text=True,
                     check=False,
                     shell=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+                    creationflags=get_subprocess_creation_flags()
                 )
             else:
                 proc = subprocess.run(
@@ -815,7 +834,8 @@ class MainWindow(QMainWindow):
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     text=True,
-                    check=False
+                    check=False,
+                    creationflags=get_subprocess_creation_flags()
                 )
             
             # Clear password from local scope
@@ -925,9 +945,43 @@ class MainWindow(QMainWindow):
         """Remove mapping when device is detached"""
         self.data_persistence_controller.remove_device_mapping(remote_busid)
 
+    def save_windows_device_description(self, ip, busid, description):
+        """Save Windows device description for busid"""
+        self.data_persistence_controller.save_windows_device_description(ip, busid, description)
+
+    def get_windows_device_description(self, ip, busid):
+        """Get stored Windows device description for a busid"""
+        return self.data_persistence_controller.get_windows_device_description(ip, busid)
+
     def get_remote_busid_for_port(self, port_busid):
         """Get the original remote busid for a port busid"""
         return self.data_persistence_controller.get_remote_busid_for_port(port_busid)
+
+    def disable_all_device_buttons(self):
+        """Disable all toggle buttons in device table to prevent race conditions"""
+        for row in range(self.device_table.rowCount()):
+            # Disable attach/detach toggle buttons (column 2)
+            toggle_widget = self.device_table.cellWidget(row, 2)
+            if toggle_widget:
+                toggle_widget.setEnabled(False)
+            
+            # Disable auto-reconnect toggle buttons (column 3) 
+            auto_widget = self.device_table.cellWidget(row, 3)
+            if auto_widget:
+                auto_widget.setEnabled(False)
+
+    def enable_all_device_buttons(self):
+        """Re-enable all toggle buttons in device table after operation completes"""
+        for row in range(self.device_table.rowCount()):
+            # Re-enable attach/detach toggle buttons (column 2)
+            toggle_widget = self.device_table.cellWidget(row, 2)
+            if toggle_widget:
+                toggle_widget.setEnabled(True)
+            
+            # Re-enable auto-reconnect toggle buttons (column 3)
+            auto_widget = self.device_table.cellWidget(row, 3)
+            if auto_widget:
+                auto_widget.setEnabled(True)
 
     def start_grace_period(self, duration_seconds=None):
         """Start grace period to pause auto-reconnect after manual bulk operations"""
@@ -967,6 +1021,52 @@ class MainWindow(QMainWindow):
         colors = self.get_theme_colors()
         dialog = AboutDialog(self, colors)
         dialog.exec()
+
+    def open_usbipd_service_dialog(self):
+        """Open Windows usbipd service management dialog"""
+        ip = self.ip_input.currentText()
+        username = getattr(self, "last_ssh_username", "")
+        password = getattr(self, "last_ssh_password", "")
+        accept = getattr(self, "last_ssh_accept", False)
+        
+        if not ip or not username or not password:
+            self.show_error("SSH credentials are required to manage usbipd service.\nPlease connect via SSH first.")
+            return
+            
+        try:
+            dialog = USBIPDServiceDialog(
+                parent=self,
+                ip=ip,
+                username=username,
+                password=password,
+                accept_fingerprint=accept
+            )
+            dialog.exec()
+        except Exception as e:
+            self.show_error(f"Failed to open usbipd service manager:\n{str(e)}")
+
+    def open_linux_usbip_service_dialog(self):
+        """Open Linux USB/IP service management dialog"""
+        ip = self.ip_input.currentText()
+        username = getattr(self, "last_ssh_username", "")
+        password = getattr(self, "last_ssh_password", "")
+        accept = getattr(self, "last_ssh_accept", False)
+        
+        if not ip or not username or not password:
+            self.show_error("SSH credentials are required to manage USB/IP service.\nPlease connect via SSH first.")
+            return
+            
+        try:
+            dialog = LinuxUSBIPServiceDialog(
+                parent=self,
+                ip=ip,
+                username=username,
+                password=password,
+                accept_fingerprint=accept
+            )
+            dialog.exec()
+        except Exception as e:
+            self.show_error(f"Failed to open Linux USB/IP service manager:\n{str(e)}")
 
     def show_help_dialog(self):
         """Show help dialog with quick start instructions"""
@@ -1055,7 +1155,8 @@ class MainWindow(QMainWindow):
                     port_cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True
+                    text=True,
+                    creationflags=get_subprocess_creation_flags()
                 )
                 
                 # Parse Windows usbipd output format
@@ -1072,7 +1173,8 @@ class MainWindow(QMainWindow):
                     ["usbip", "port"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True
+                    text=True,
+                    creationflags=get_subprocess_creation_flags()
                 )
                 port_output = port_result.stdout
                 attached_descs = set()
@@ -1093,7 +1195,8 @@ class MainWindow(QMainWindow):
                         list_cmd,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
-                        text=True
+                        text=True,
+                        creationflags=get_subprocess_creation_flags()
                     )
                 else:
                     # Fallback: Show warning and empty device list
@@ -1275,48 +1378,3 @@ class MainWindow(QMainWindow):
     def disconnect_ssh(self):
         """Disconnect SSH (delegate to SSH controller)"""
         self.ssh_management_controller.disconnect_ssh()
-
-    def reset_usbipd(self):
-        ip = self.ip_input.currentText()
-        username = getattr(self, "last_ssh_username", "")
-        password = getattr(self, "last_ssh_password", "")
-        accept = getattr(self, "last_ssh_accept", False)
-        if not ip or not username or not password:
-            self.append_simple_message("❌ Missing SSH credentials for IPD Reset")
-            return
-        try:
-            client = paramiko.SSHClient()
-            if accept:
-                client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            else:
-                client.set_missing_host_key_policy(paramiko.RejectPolicy())
-            client.connect(ip, username=username, password=password, timeout=15)
-            
-            # Restart usbipd using secure command builder (remote execution)
-            actual_cmd = SecureCommandBuilder.build_systemctl_command("restart", "usbipd", password, remote_execution=True)
-            if not actual_cmd:
-                self.console.append("Failed to build secure restart command.\n")
-                client.close()
-                return
-                
-            # SSH commands always execute on remote Linux server, so always use sudo
-            safe_cmd = "echo [HIDDEN] | sudo -S systemctl restart usbipd"
-            stdin, stdout, stderr = client.exec_command(actual_cmd)
-            output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-            self.append_verbose_message(f"SSH $ {safe_cmd}\n")
-            if output:
-                self.append_verbose_message(f"{SecurityValidator.sanitize_console_output(output)}\n")
-                
-            # Show status after restart
-            actual_status_cmd = SecureCommandBuilder.build_systemctl_command("status", "usbipd", password, remote_execution=True)
-            if actual_status_cmd:
-                # SSH commands always execute on remote Linux server, so always use sudo
-                safe_status_cmd = "echo [HIDDEN] | sudo -S systemctl status usbipd"
-                stdin, stdout, stderr = client.exec_command(actual_status_cmd)
-                status_output = self.filter_sudo_prompts(stdout.read().decode() + stderr.read().decode())
-                self.append_verbose_message(f"SSH $ {safe_status_cmd}\n")
-                if status_output:
-                    self.append_verbose_message(f"{SecurityValidator.sanitize_console_output(status_output)}\n")
-            client.close()
-        except Exception as e:
-            self.console.append(f"Error restarting usbipd: Connection or authentication failed\n")

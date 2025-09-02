@@ -10,6 +10,12 @@ from utils.admin_utils import check_and_elevate
 import subprocess
 import os
 
+def get_subprocess_creation_flags():
+    """Get appropriate creation flags for subprocess on Windows to hide console windows"""
+    if platform.system() == 'Windows':
+        return subprocess.CREATE_NO_WINDOW
+    return 0
+
 def get_saved_theme():
     """Get the saved theme setting without requiring full window initialization"""
     try:
@@ -126,7 +132,8 @@ def test_sudo_password(password):
             stderr=subprocess.PIPE,
             text=True,
             timeout=10,
-            check=False
+            check=False,
+            creationflags=get_subprocess_creation_flags()
         )
         return proc.returncode == 0
     except Exception:

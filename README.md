@@ -1,18 +1,38 @@
 # 🖥️ USBIP GUI Application
 
-A **secure**, modern Linux desktop GUI for managing USBIP devices locally and remotely via SSH. Perfect for gaming setups, home labs, and remote USB device management.
+A **secure**, modern cross-platform GUI for managing USB/IP devices locally and remotely via SSH. Perfect for gaming setups, home labs, and remote USB device management.
 
-**Note**, Fully Vibe Coded with GitHub Copilot, if you don't like AI, don't use this! I needed an app to send USB over IP that was tailored to my needs, and I am not a coder, so here we are!
+**Note**: Fully Vibe Coded with GitHub Copilot, if you don't like AI, don't use this! I needed an app to send USB over IP that was tailored to my needs, and I am not a coder, so here we are!
 
+## 🌟 Platform Support
+
+### 🖥️ **Windows & Linux Support**
+- **Windows Client**: Full USB/IP client support with vadimgrn/usbip-win2
+- **Linux Client**: Traditional usbip command-line tools
+- **Windows Server**: usbipd-win service integration with GUI management
+- **Linux Server**: Traditional usbipd daemon support
+- **Cross-Platform**: Windows ↔ Linux, Windows ↔ Windows, Linux ↔ Linux
 
 ## ✨ Features
 
 ### 🔌 Device Management
-- **Attach/detach** USB devices from remote servers using USBIP
+- **Attach/detach** USB devices from remote servers using USB/IP
 - **Bind/unbind** USB devices on remote servers via SSH
 - **🔄 Auto-reconnect** for specific devices with customizable settings
 - **Dual-table interface** for local and remote USB devices
 - **Bulk operations** - Attach All, Detach All, and Unbind All buttons
+- **🪟 Windows usbipd integration** - Native Windows USB/IP server support
+- **🐧 Linux service management** - Comprehensive USB/IP daemon control with real-time monitoring
+
+### 🐧 Linux USB/IP Service Management
+- **🔄 Real-time service status** - Live daemon monitoring with intelligent status detection
+- **🚀 Start/Stop daemon control** - Secure systemctl operations with proper authentication
+- **🔧 Kernel module management** - Load/unload USB/IP modules (usbip_host, usbip_core, vhci_hcd)
+- **🤖 Auto-start configuration** - Enable/disable daemon auto-start on boot
+- **📊 Installation verification** - Checks USB/IP tools availability and version information
+- **🛡️ Secure command execution** - All operations use validated sudo commands with proper escaping
+- **⚡ Smart status detection** - Prioritizes actual listening ports over systemctl transitional states
+- **🔄 Chronological log analysis** - Prevents false status reports from old log entries
 
 ### 🎨 Theme System
 - **4 Built-in themes** - System, Light, Dark, and OLED
@@ -40,6 +60,12 @@ A **secure**, modern Linux desktop GUI for managing USBIP devices locally and re
 - **🎯 Intuitive PyQt6 interface** with modern design
 
 ### 🔧 Recent Improvements
+- **✅ Linux USB/IP Service Management** - Complete daemon control with real-time status monitoring
+- **✅ Intelligent status detection** - Chronological log analysis and listening port prioritization  
+- **✅ Cross-platform service support** - Unified interface for Windows and Linux USB/IP services
+- **✅ Enhanced device operation reliability** - Fixed port mapping for detach operations
+- **✅ Optimized performance** - Reduced Windows USB subsystem delays for faster operations
+- **✅ Auto-refresh after operations** - Device lists automatically update after attach/detach
 - **✅ Smart refresh system** - Auto-refresh preserves device states and user settings
 - **✅ Enhanced Qt signal handling** - Prevents unwanted operations during UI updates
 - **✅ Persistent auto-reconnect states** - Settings survive refreshes and theme changes
@@ -80,7 +106,10 @@ usbip-gui-app/
 ├── src/
 │   ├── main.py               # 🚀 Application entry point
 │   ├── gui/
-│   │   └── window.py         # 🖼️ Main GUI window with all features
+│   │   ├── window.py         # 🖼️ Main GUI window with all features
+│   │   ├── controllers/      # 🎛️ UI logic controllers
+│   │   ├── dialogs/          # 💬 Dialog windows (settings, help, about, service management)
+│   │   └── widgets/          # 🧩 Custom UI components
 │   ├── security/
 │   │   ├── crypto.py         # 🔐 AES-256 encryption & memory protection
 │   │   ├── validator.py      # 🛡️ Input validation & command sanitization
@@ -88,6 +117,11 @@ usbip-gui-app/
 │   ├── usbip/
 │   │   ├── manager.py        # ⚙️ USBIP management logic
 │   │   └── utils.py          # 🛠️ USBIP utility functions
+│   ├── utils/
+│   │   ├── admin_utils.py    # 🔧 Administrative utilities
+│   │   ├── linux_usbip_service_manager.py  # 🐧 Linux USB/IP service management
+│   │   ├── usbipd_service_manager.py       # 🪟 Windows usbipd service management
+│   │   └── remote_os_detector.py           # 🔍 Remote OS detection
 │   ├── dependencies/
 │   │   └── checker.py        # ✅ Dependency validation
 │   └── types/
@@ -176,14 +210,25 @@ python3 src/main.py
 - **⚡ Use "Attach All/Detach All"** for bulk local device operations
 - **⚡ Use "Unbind All"** for bulk remote device operations  
 - **⏸️ Grace period** - Auto-reconnect pauses for 60 seconds after bulk operations
+- **🐧 Click "Linux USB/IP Service"** for comprehensive daemon management on Linux systems
+- **🪟 Click "Windows USB/IP Service"** for usbipd service management on Windows systems
 
 ### Interface & Customization
 - **🎨 Click "Settings"** to access theme selection and configuration options
 - **🌟 Choose from 4 themes** - System (adaptive), Light, Dark, or OLED (pure black)
 - **💾 Automatic persistence** - Your theme choice and settings are remembered
 - **🔄 Smart refresh** - Interface updates preserve all your settings and device states
-- **🔄 Click "IPD Reset"** to restart remote usbipd service
+- **🔄 Click "IPD Reset"** to restart remote usbipd service (replaced by comprehensive service management)
 - **🧹 Click "Clear"** to clean console output
+
+### 🐧 Linux Service Management
+- **🔄 Real-time Status Monitoring** - Live daemon status with intelligent detection
+- **🚀 Start/Stop Daemon** - Secure control with proper sudo authentication  
+- **🔧 Kernel Module Control** - Load/unload USB/IP modules as needed
+- **🤖 Auto-start Configuration** - Enable/disable daemon auto-start on boot
+- **📊 Installation Verification** - Check USB/IP tools and version information
+- **⚡ Smart Status Detection** - Prioritizes actual daemon listening state over systemctl transitions
+- **🔄 Status Refresh** - Chronological log analysis prevents false status reports
 
 ### 🛡️ Reliability & Stability
 - **Smart signal handling** - Prevents accidental device operations during interface updates
@@ -347,6 +392,22 @@ sudo systemctl enable usbipd
 sudo systemctl status usbipd
 ```
 
+### Linux Service Management Issues
+- **"Service shows as STARTING forever"** - ✅ **FIXED** - Smart detection now prioritizes actual listening ports over systemctl states
+
+- **"Daemon status is incorrect"** - ✅ **FIXED** - Chronological log analysis prevents false status from old entries
+
+- **"Could not determine service status"** - ✅ **FIXED** - Added proper delays and improved status checking after start/stop operations
+
+- **"Service buttons are backwards"** - ✅ **FIXED** - Button logic now correctly reflects actual daemon running state
+
+- **"Start/Stop operations time out"** - Service management now includes proper authentication and timing delays
+
+- **"Kernel modules not loading"** - Use the "Load Modules" button in Linux service management or manually:
+  ```bash
+  sudo modprobe usbip_host usbip_core vhci_hcd
+  ```
+
 ### Interface & Theme Issues
 - **"Ping shows red constantly"** - Check IP address validity, network connectivity, or firewall settings
 
@@ -394,6 +455,13 @@ sudo systemctl status usbipd
 - **✅ Excellent** Secure file operations with atomic writes
 - **✅ Excellent** Information disclosure prevention in error handling
 - **✅ Excellent** Connection timeout and process security controls
+
+## 📚 Documentation
+
+- **[Windows usbipd Support](WINDOWS_USBIPD_SUPPORT.md)** - Complete guide for Windows USB/IP server integration
+- **[Platform Support](PLATFORM_SUPPORT.md)** - Cross-platform compatibility details
+- **[Build Instructions](BUILD.md)** - How to build the application
+- **[Security Overview](SECURITY.md)** - Security features and implementation details
 
 ## 🤝 Contributing
 

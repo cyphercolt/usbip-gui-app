@@ -93,8 +93,28 @@ class HelpDialog(QDialog):
 <li><b>Select an IP</b> - Choose from dropdown (pings automatically with latency display)</li>
 <li><b>Click 'Refresh'</b> - Load devices when ready</li>
 <li><b>Use SSH Devices</b> - Start connection to remote USB/IP daemon</li>
-<li><b>IPD Reset</b> - Refreshes the USBIP Daemon on the remote if needed</li>
+<li><b>Linux USB/IP Service</b> - Comprehensive daemon management for Linux systems</li>
+<li><b>Windows USB/IP Service</b> - usbipd service management for Windows systems</li>
 <li><b>Settings</b> - Access debug mode, console preferences, and configuration options</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🐧 Linux USB/IP Service Management:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>🔄 Real-time Status:</b> Live daemon monitoring with intelligent status detection</li>
+<li><b>🚀 Start/Stop Daemon:</b> Secure control of USB/IP daemon with proper authentication</li>
+<li><b>🔧 Kernel Modules:</b> Load/unload USB/IP kernel modules (usbip_host, usbip_core)</li>
+<li><b>🤖 Auto-start Control:</b> Enable/disable daemon auto-start on boot</li>
+<li><b>📊 Installation Check:</b> Verify USB/IP tools and display version information</li>
+<li><b>🛡️ Secure Operations:</b> All commands use validated sudo with proper authentication</li>
+<li><b>⚡ Smart Detection:</b> Prioritizes actual daemon listening state over systemctl transitions</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🔍 Service Status Indicators:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li><b>🟢 OPERATIONAL:</b> Daemon is running and listening on port 3240</li>
+<li><b>🟡 TRANSITIONING:</b> Daemon is starting or stopping</li>
+<li><b>🔴 OFFLINE:</b> Daemon is stopped, failed, or not responding</li>
+<li><b>📊 Component Status:</b> Individual status for daemon, auto-start, modules, and command</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">� Gaming & Performance Features:</h3>
@@ -156,6 +176,12 @@ class HelpDialog(QDialog):
 
 <h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Improvements:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>✅ <b>Linux USB/IP Service Management:</b> Complete daemon control with real-time status monitoring</li>
+<li>✅ <b>Intelligent Status Detection:</b> Chronological log analysis and listening port prioritization</li>
+<li>✅ <b>Cross-Platform Service Support:</b> Unified interface for Windows and Linux USB/IP services</li>
+<li>✅ <b>Enhanced Device Operation Reliability:</b> Fixed port mapping for detach operations</li>
+<li>✅ <b>Optimized Performance:</b> Reduced Windows USB subsystem delays for faster operations</li>
+<li>✅ <b>Auto-refresh After Operations:</b> Device lists automatically update after attach/detach</li>
 <li>✅ <b>Gaming-Focused Ping System:</b> Real-time latency monitoring with color-coded performance indicators</li>
 <li>✅ <b>Enhanced Console System:</b> Verbose mode for debugging, simple mode for clean output</li>
 <li>✅ <b>Safe IP Management:</b> Dedicated dialog prevents app hangs on bad IPs</li>

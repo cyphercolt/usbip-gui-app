@@ -1,7 +1,38 @@
 # Platform-Aware USB/IP Support
 
 ## Overview
-The USB/IP GUI application now supports both Windows and Linux with platform-specific parsing logic to handle different `usbip port` output formats.
+The USB/IP GUI application supports both Windows and Linux with platform-specific parsing logic, service management, and comprehensive cross-platform compatibility.
+
+## Platform Differences
+
+### Windows USB/IP Client Output
+```
+Port 01: device in use at Full Speed(12Mbps)
+         Logitech, Inc. : Lightspeed Receiver (046d:c539)
+           -> usbip://192.168.2.184:3240/3-2.3
+           -> remote bus/dev 003/007
+```
+
+### Linux USB/IP Output
+```
+Port 01: <device description>
+```
+
+## Service Management
+
+### Windows usbipd Service
+- **Service Control**: Integration with Windows usbipd service
+- **Device Sharing**: Native Windows USB/IP server functionality
+- **Administrative Access**: Automatic elevation handling
+- **PowerShell Integration**: Native Windows command execution
+
+### Linux usbipd Service
+- **Real-time Monitoring**: Live daemon status with intelligent detection
+- **Systemctl Integration**: Secure start/stop operations with sudo authentication
+- **Kernel Module Management**: Load/unload USB/IP modules (usbip_host, usbip_core, vhci_hcd)
+- **Auto-start Configuration**: Enable/disable daemon auto-start on boot
+- **Status Detection**: Chronological log analysis and listening port prioritization
+- **Secure Operations**: Validated sudo commands with proper escaping
 
 ## Platform Differences
 
