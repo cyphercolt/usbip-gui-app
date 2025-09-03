@@ -57,6 +57,18 @@ jobs:
         copy dist\USB-IP-GUI.exe USB-IP-GUI-Windows-Manual\
         copy README.md USB-IP-GUI-Windows-Manual\
         copy LICENSE USB-IP-GUI-Windows-Manual\
+        @"
+# USB/IP GUI App for Windows (Manual Build)
+
+## Prerequisites
+1. Install USB/IP client from: https://github.com/vadimgrn/usbip-win2
+2. Or install usbipd-win from: https://github.com/dorssel/usbipd-win
+
+## Usage
+1. Extract this package
+2. Run USB-IP-GUI.exe
+3. The app will guide you through setup
+"@ | Out-File -FilePath USB-IP-GUI-Windows-Manual\INSTALL.md -Encoding UTF8
         powershell Compress-Archive -Path USB-IP-GUI-Windows-Manual\* -DestinationPath USB-IP-GUI-Windows-Manual.zip
         
     - name: Upload Windows artifact
