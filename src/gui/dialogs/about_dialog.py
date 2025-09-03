@@ -67,7 +67,7 @@ class AboutDialog(QDialog):
 
         # Version and description
         version_label = QLabel(
-            "Version 2.3.0 - Professional USB/IP Management with Enterprise CI/CD"
+            "Version 2.3.1 - Professional USB/IP Management with Auto-Bind Fixes"
         )
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
@@ -99,7 +99,7 @@ class AboutDialog(QDialog):
         about_content = f"""
 <h3 style="color: {header_color}; margin-top: 0;">✨ Key Features:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🔄 <b>Smart Auto-Reconnect System</b> - Intelligent device reconnection with failure handling</li>
+<li>🔄 <b>Smart Auto-Reconnect System</b> - Intelligent device reconnection with Windows auto-bind fixes</li>
 <li>🔃 <b>Enhanced Auto-Refresh</b> - Preserves settings and device states during updates</li>
 <li>🎨 <b>Complete Theme System</b> - 4 beautiful themes (System, Light, Dark, OLED) with full persistence</li>
 <li>🔒 <b>Advanced Security</b> - AES-256 encryption with military-grade memory protection</li>
