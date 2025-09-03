@@ -9,7 +9,6 @@ This controller handles all SSH-related operations including:
 """
 
 import paramiko
-import platform
 import time
 from PyQt6.QtWidgets import (
     QDialog,
@@ -255,7 +254,7 @@ class SSHManagementController:
                 )
                 self.main_window.remote_table.setCellWidget(row, 3, auto_btn)
             client.close()
-        except Exception as e:
+        except Exception:
             self.main_window.append_simple_message(
                 "❌ SSH connection failed: Authentication or network error"
             )
@@ -394,7 +393,7 @@ class SSHManagementController:
 
             # Re-enable all buttons after successful operation
             self.main_window.enable_all_device_buttons()
-        except Exception as e:
+        except Exception:
             error_msg = "❌ SSH bind/unbind failed: Connection or authentication error"
             if self.remote_os_type == "windows" and not self.remote_has_usbipd:
                 error_msg += " (usbipd service may not be running)"
@@ -457,7 +456,7 @@ class SSHManagementController:
             stdin, stdout, stderr = client.exec_command(actual_cmd)
             output = stdout.read().decode()
             error = stderr.read().decode()
-            
+
             # Log the command and output for debugging
             self.main_window.append_verbose_message(f"SSH $ {safe_cmd}\n")
             if output.strip():
@@ -473,7 +472,7 @@ class SSHManagementController:
                     success = (
                         "successfully" in output.lower() or
                         "shared" in output.lower() or
-                        (not error.strip() and not "error" in output.lower() and not "failed" in output.lower())
+                        (not error.strip() and "error" not in output.lower() and "failed" not in output.lower())
                     )
                 else:
                     # For Windows usbipd unbind, check for success indicators
@@ -481,7 +480,7 @@ class SSHManagementController:
                         "successfully" in output.lower() or
                         "unshared" in output.lower() or
                         "not shared" in output.lower() or
-                        (not error.strip() and not "error" in output.lower() and not "failed" in output.lower())
+                        (not error.strip() and "error" not in output.lower() and "failed" not in output.lower())
                     )
             else:
                 # For Linux, assume success if no error output
@@ -706,7 +705,6 @@ class SSHManagementController:
             ip = self.main_window.ip_input.currentText()
             if ip:
                 # Read current states from persistent storage (not UI)
-                remote_bind_states = self.main_window.load_remote_state(ip)
                 auto_reconnect_states = {}
 
                 # Get current device list to check what auto-reconnect states exist

@@ -59,7 +59,7 @@ class AutoReconnectController(QObject):
                 elif table_type == "remote" and self.should_auto_bind_device(ip, busid):
                     self.attempt_auto_bind(ip, busid, device_key)
 
-            except Exception as e:
+            except Exception:
                 continue  # Skip malformed device keys
 
     def should_auto_reconnect_device(self, ip, busid):
@@ -194,10 +194,10 @@ class AutoReconnectController(QObject):
 
         if success:
             self.main_window.append_simple_message(f"✅ Auto-bind successful: {busid}")
-            
+
             # Add delay for Windows to properly export the device
             time.sleep(1.0)  # 1 second delay to allow device to become available
-            
+
             self.main_window.append_simple_message(
                 "🔄 Refreshing local devices to show newly bound device..."
             )
