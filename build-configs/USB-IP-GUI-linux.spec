@@ -2,7 +2,7 @@
 # PyInstaller spec file for Linux builds
 
 a = Analysis(
-    ['src/main.py'],
+    ['../src/main.py'],
     pathex=[],
     binaries=[],
     datas=[],
