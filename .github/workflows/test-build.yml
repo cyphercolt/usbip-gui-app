@@ -35,13 +35,14 @@ jobs:
     - name: Test Windows build
       run: |
         .\venv\Scripts\activate
-        pyinstaller build-configs\USB-IP-GUI.spec --clean
+        cd build-configs
+        pyinstaller USB-IP-GUI.spec --clean
         
     - name: Verify Windows executable
       run: |
-        if (Test-Path "dist\USB-IP-GUI.exe") {
+        if (Test-Path "build-configs\dist\USB-IP-GUI.exe") {
           Write-Host "✅ Windows executable created successfully"
-          $size = (Get-Item "dist\USB-IP-GUI.exe").Length / 1MB
+          $size = (Get-Item "build-configs\dist\USB-IP-GUI.exe").Length / 1MB
           Write-Host "📊 Executable size: $([math]::Round($size, 1)) MB"
         } else {
           Write-Host "❌ Windows executable not found"
@@ -78,13 +79,14 @@ jobs:
     - name: Test Linux build
       run: |
         source venv/bin/activate
-        pyinstaller build-configs/USB-IP-GUI-linux.spec --clean
+        cd build-configs
+        pyinstaller USB-IP-GUI-linux.spec --clean
         
     - name: Verify Linux executable
       run: |
-        if [ -f "dist/USB-IP-GUI" ]; then
+        if [ -f "build-configs/dist/USB-IP-GUI" ]; then
           echo "✅ Linux executable created successfully"
-          size=$(du -m dist/USB-IP-GUI | cut -f1)
+          size=$(du -m build-configs/dist/USB-IP-GUI | cut -f1)
           echo "📊 Executable size: ${size} MB"
         else
           echo "❌ Linux executable not found"

@@ -49,12 +49,13 @@ jobs:
     - name: Build Windows executable
       run: |
         .\venv\Scripts\activate
-        pyinstaller build-configs\USB-IP-GUI.spec --clean
+        cd build-configs
+        pyinstaller USB-IP-GUI.spec --clean
         
     - name: Create Windows package
       run: |
         mkdir USB-IP-GUI-Windows-Manual
-        copy dist\USB-IP-GUI.exe USB-IP-GUI-Windows-Manual\
+        copy build-configs\dist\USB-IP-GUI.exe USB-IP-GUI-Windows-Manual\
         copy README.md USB-IP-GUI-Windows-Manual\
         copy LICENSE USB-IP-GUI-Windows-Manual\
         echo "# USB/IP GUI App for Windows (Manual Build)" > USB-IP-GUI-Windows-Manual\INSTALL.md
@@ -108,7 +109,8 @@ jobs:
     - name: Build Linux executable
       run: |
         source venv/bin/activate
-        pyinstaller build-configs/USB-IP-GUI-linux.spec --clean
+        cd build-configs
+        pyinstaller USB-IP-GUI-linux.spec --clean
         
     - name: Create Linux package
       run: |

@@ -12,7 +12,7 @@ echo "📦 Preparing Linux release package..."
 echo "====================================="
 
 # Check if executable exists
-if [ ! -f "dist/USB-IP-GUI" ]; then
+if [ ! -f "build-configs/dist/USB-IP-GUI" ]; then
     echo "❌ Executable not found. Run ./build-linux.sh first."
     exit 1
 fi
@@ -23,11 +23,11 @@ mkdir -p "$RELEASE_DIR"
 
 # Copy the executable
 echo "📋 Copying executable..."
-cp dist/USB-IP-GUI "$RELEASE_DIR/"
+cp build-configs/dist/USB-IP-GUI "$RELEASE_DIR/"
 
 # Copy documentation
 echo "📋 Copying documentation..."
-cp LINUX-INSTALL.md "$RELEASE_DIR/"
+cp docs/LINUX-INSTALL.md "$RELEASE_DIR/"
 cp README.md "$RELEASE_DIR/"
 cp LICENSE "$RELEASE_DIR/" 2>/dev/null || echo "⚠️  LICENSE file not found"
 
