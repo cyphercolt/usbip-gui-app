@@ -67,7 +67,7 @@ class AboutDialog(QDialog):
 
         # Version and description
         version_label = QLabel(
-            "Version 2.3.1 - Professional USB/IP Management with Enhanced Auto-Bind"
+            "Version 2.4.0 - Professional USB/IP Management with Enhanced User Experience"
         )
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
@@ -99,14 +99,17 @@ class AboutDialog(QDialog):
         about_content = f"""
 <h3 style="color: {header_color}; margin-top: 0;">✨ Key Features:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🔄 <b>Smart Auto-Reconnect System</b> - Intelligent device reconnection with failure handling</li>
-<li>🔃 <b>Enhanced Auto-Refresh</b> - Preserves settings and device states during updates</li>
+<li>🧠 <b>Smart IP Memory</b> - Remembers last selected IP on application restart for seamless workflow</li>
+<li>🔄 <b>Smart Auto-Reconnect System</b> - Intelligent device reconnection with Windows auto-bind fixes</li>
+<li>🔐 <b>Enhanced SSH Management</b> - Fixed disconnect behavior and improved daemon control commands</li>
+<li>🔃 <b>Enhanced Auto-Refresh</b> - Preserves settings and device states during updates with proper SSH handling</li>
 <li>🛠️ <b>Fixed Auto-Bind for Windows</b> - Proper OS-specific commands with success validation</li>
+<li>⚙️ <b>Complete Linux Service Support</b> - Enable/disable systemctl commands for usbipd service management</li>
 <li>🎨 <b>Complete Theme System</b> - 4 beautiful themes (System, Light, Dark, OLED) with full persistence</li>
 <li>🔒 <b>Advanced Security</b> - AES-256 encryption with military-grade memory protection</li>
-<li>🖥️ <b>Seamless SSH Integration</b> - Secure remote USB/IP daemon management</li>
+<li>🖥️ <b>Seamless SSH Integration</b> - Secure remote USB/IP daemon management with proper disconnect handling</li>
 <li>📊 <b>Intelligent Device Mapping</b> - Smart correlation between remote and local devices</li>
-<li>⚙️ <b>Comprehensive Settings</b> - Customizable intervals, grace periods, and theming</li>
+<li>⚙️ <b>Comprehensive Settings</b> - Customizable intervals, grace periods, and theming with persistence</li>
 <li>🎯 <b>Per-Device Control</b> - Individual auto-reconnect settings with visual indicators</li>
 <li>🚀 <b>Robust Bulk Operations</b> - Multi-device operations with grace period handling</li>
 <li>🛡️ <b>Enhanced Reliability</b> - Qt signal blocking prevents unwanted operations</li>
