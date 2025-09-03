@@ -159,7 +159,7 @@ class SecureCommandBuilder:
             remote_execution: If True, always build the command (for SSH execution on remote Linux)
                             If False, check local platform compatibility
         """
-        allowed_actions = {"start", "stop", "restart", "status"}
+        allowed_actions = {"start", "stop", "restart", "status", "enable", "disable"}
         allowed_services = {"usbipd"}
 
         if action not in allowed_actions or service not in allowed_services:

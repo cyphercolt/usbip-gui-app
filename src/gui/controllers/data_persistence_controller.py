@@ -45,17 +45,38 @@ class DataPersistenceController:
     def load_ips(self):
         """Load IP addresses and populate the IP combo box"""
         ip_data = self.main_window.file_crypto.load_encrypted_file(self.IP_LIST_FILE)
-        for ip in ip_data.get("ips", []):
+        ips = ip_data.get("ips", [])
+        last_selected_ip = ip_data.get("current_ip", "")
+
+        # Populate the combo box
+        for ip in ips:
             self.main_window.ip_input.addItem(ip)
 
+        # Restore the last selected IP if it exists in the list
+        if last_selected_ip and last_selected_ip in ips:
+            index = self.main_window.ip_input.findText(last_selected_ip)
+            if index >= 0:
+                self.main_window.ip_input.setCurrentIndex(index)
+
     def save_ips(self):
-        """Save current IP addresses to encrypted file"""
+        """Save current IP addresses and selected IP to encrypted file"""
         ips = []
         for i in range(self.main_window.ip_input.count()):
             ips.append(self.main_window.ip_input.itemText(i))
 
-        ip_data = {"ips": ips}
+        current_ip = self.main_window.ip_input.currentText()
+        ip_data = {"ips": ips, "current_ip": current_ip}
         self.main_window.file_crypto.save_encrypted_file(self.IP_LIST_FILE, ip_data)
+
+    def save_current_ip(self):
+        """Save only the currently selected IP (lightweight update)"""
+        current_ip = self.main_window.ip_input.currentText()
+        if current_ip:  # Only save if there's a valid IP selected
+            ip_data = self.main_window.file_crypto.load_encrypted_file(
+                self.IP_LIST_FILE
+            )
+            ip_data["current_ip"] = current_ip
+            self.main_window.file_crypto.save_encrypted_file(self.IP_LIST_FILE, ip_data)
 
     def load_state(self, ip):
         """Load device states for a specific IP"""
