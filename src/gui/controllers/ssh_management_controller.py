@@ -419,32 +419,88 @@ class SSHManagementController:
                 client.set_missing_host_key_policy(paramiko.RejectPolicy())
             client.connect(ip, username=username, password=password, timeout=15)
 
-            # Use SSH password as sudo password for remote Linux commands
-            sudo_password = password
-
+            # Get appropriate command based on remote OS type
             if bind:
-                actual_cmd = SecureCommandBuilder.build_usbip_bind_command(
-                    busid, sudo_password, remote_execution=True
-                )
+                if self.remote_os_type == "windows" and self.remote_has_usbipd:
+                    # Windows usbipd command
+                    actual_cmd = RemoteOSDetector.get_remote_usbip_bind_command(
+                        self.remote_os_type, busid, self.remote_has_usbipd
+                    )
+                    safe_cmd = actual_cmd  # No password hiding needed for Windows usbipd
+                else:
+                    # Linux/Unix system - use sudo with password
+                    sudo_password = password
+                    actual_cmd = SecureCommandBuilder.build_usbip_bind_command(
+                        busid, sudo_password, remote_execution=True
+                    )
+                    safe_cmd = f"echo [HIDDEN] | sudo -S usbip bind -b {SecurityValidator.sanitize_for_shell(busid)}"
             else:
-                actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(
-                    busid, sudo_password, remote_execution=True
-                )
+                if self.remote_os_type == "windows" and self.remote_has_usbipd:
+                    # Windows usbipd command
+                    actual_cmd = RemoteOSDetector.get_remote_usbip_unbind_command(
+                        self.remote_os_type, busid, self.remote_has_usbipd
+                    )
+                    safe_cmd = actual_cmd  # No password hiding needed for Windows usbipd
+                else:
+                    # Linux/Unix system - use sudo with password
+                    sudo_password = password
+                    actual_cmd = SecureCommandBuilder.build_usbip_unbind_command(
+                        busid, sudo_password, remote_execution=True
+                    )
+                    safe_cmd = f"echo [HIDDEN] | sudo -S usbip unbind -b {SecurityValidator.sanitize_for_shell(busid)}"
 
             if not actual_cmd:
                 client.close()
                 return False
 
+            # Execute command and check output for success
             stdin, stdout, stderr = client.exec_command(actual_cmd)
-            stdout.read()  # Wait for command completion
-            stderr.read()
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+            
+            # Log the command and output for debugging
+            self.main_window.append_verbose_message(f"SSH $ {safe_cmd}\n")
+            if output.strip():
+                self.main_window.append_verbose_message(f"Output: {output.strip()}\n")
+            if error.strip():
+                self.main_window.append_verbose_message(f"Error: {error.strip()}\n")
 
-            # Save the remote bind state after successful operation
-            self.main_window.save_remote_state(ip, busid, bind)
+            # Check for success based on remote OS and command output
+            success = False
+            if self.remote_os_type == "windows" and self.remote_has_usbipd:
+                if bind:
+                    # For Windows usbipd bind, check for success indicators
+                    success = (
+                        "successfully" in output.lower() or
+                        "shared" in output.lower() or
+                        (not error.strip() and not "error" in output.lower() and not "failed" in output.lower())
+                    )
+                else:
+                    # For Windows usbipd unbind, check for success indicators
+                    success = (
+                        "successfully" in output.lower() or
+                        "unshared" in output.lower() or
+                        "not shared" in output.lower() or
+                        (not error.strip() and not "error" in output.lower() and not "failed" in output.lower())
+                    )
+            else:
+                # For Linux, assume success if no error output
+                success = not error.strip() or "error" not in error.lower()
 
             client.close()
-            return True  # Assume success if no exception
-        except Exception:
+
+            if success:
+                # Save the remote bind state after successful operation
+                self.main_window.save_remote_state(ip, busid, bind)
+                return True
+            else:
+                self.main_window.append_simple_message(
+                    f"❌ Remote {'bind' if bind else 'unbind'} failed for {busid}: {error.strip() if error.strip() else 'Unknown error'}"
+                )
+                return False
+
+        except Exception as e:
+            self.main_window.append_verbose_message(f"Exception in perform_remote_bind: {str(e)}\n")
             return False
 
     def parse_usbipd_list(self, output):
