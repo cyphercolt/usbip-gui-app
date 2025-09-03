@@ -200,12 +200,7 @@ class MainWindow(QMainWindow):
         self.ssh_disco_button.setVisible(False)
         btn_layout.addWidget(self.ssh_disco_button)
 
-        self.linux_usbip_service_button = QPushButton("Manage USB/IP Service")
-        self.linux_usbip_service_button.clicked.connect(
-            self.open_linux_usbip_service_dialog
-        )
-        self.linux_usbip_service_button.setVisible(False)
-        btn_layout.addWidget(self.linux_usbip_service_button)
+        # Note: Linux USB/IP service button moved to remote section for better layout consistency
 
         # Auto-reconnect controls
         self.auto_reconnect_enabled = True
@@ -299,11 +294,19 @@ class MainWindow(QMainWindow):
         self.usbipd_service_button.clicked.connect(self.open_usbipd_service_dialog)
         self.usbipd_service_button.setVisible(False)  # Initially hidden
 
+        # Linux USB/IP service management button (moved here for consistent layout)
+        self.linux_usbip_service_button = QPushButton("Manage USB/IP Service")
+        self.linux_usbip_service_button.clicked.connect(
+            self.open_linux_usbip_service_dialog
+        )
+        self.linux_usbip_service_button.setVisible(False)  # Initially hidden
+
         remote_btns_widget = QWidget()
         remote_btns_layout = QHBoxLayout()
         remote_btns_layout.addStretch()
         remote_btns_layout.addWidget(self.unbind_all_button)
         remote_btns_layout.addWidget(self.usbipd_service_button)
+        remote_btns_layout.addWidget(self.linux_usbip_service_button)
         remote_btns_widget.setLayout(remote_btns_layout)
         remote_layout.addWidget(remote_btns_widget)
         remote_widget.setLayout(remote_layout)

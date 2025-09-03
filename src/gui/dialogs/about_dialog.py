@@ -67,7 +67,7 @@ class AboutDialog(QDialog):
 
         # Version and description
         version_label = QLabel(
-            "Version 2.2.2 - Advanced USB/IP Management Tool with Cross-Platform Service Management"
+            "Version 2.3.0 - Professional USB/IP Management with Enterprise CI/CD"
         )
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
@@ -111,6 +111,22 @@ class AboutDialog(QDialog):
 <li>🛡️ <b>Enhanced Reliability</b> - Qt signal blocking prevents unwanted operations</li>
 <li>🐧 <b>Linux Service Management</b> - Comprehensive USB/IP daemon control with real-time status</li>
 <li>🔧 <b>Cross-Platform Service Support</b> - Windows usbipd and Linux usbipd management</li>
+<li>🏗️ <b>Professional CI/CD Pipeline</b> - Automated builds, testing, and releases for both platforms</li>
+<li>🌟 <b>Enterprise Development Workflow</b> - Git Flow branching with comprehensive documentation</li>
+</ul>
+
+<h3 style="color: {header_color}; margin-top: 20px;">🏗️ Development & CI/CD Excellence:</h3>
+<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
+<li>🤖 <b>Automated GitHub Actions</b> - Complete CI/CD pipeline with build testing and releases</li>
+<li>🔧 <b>Cross-Platform Builds</b> - Automated Windows (.exe) and Linux executable generation</li>
+<li>✅ <b>Code Quality Enforcement</b> - Black formatting and Flake8 linting in every commit</li>
+<li>🌿 <b>Git Flow Workflow</b> - Professional branching strategy with feature/develop/main branches</li>
+<li>📦 <b>PyInstaller Integration</b> - Optimized build configurations for 65MB Linux and ~30MB Windows executables</li>
+<li>📋 <b>Comprehensive Documentation</b> - Developer guides, workflow instructions, and setup documentation</li>
+<li>🚀 <b>Automated Releases</b> - Tagged releases trigger automatic binary builds and GitHub releases</li>
+<li>🧪 <b>Testing Pipeline</b> - Automated build verification on all platforms before merge</li>
+<li>📁 <b>Organized Project Structure</b> - Professional organization with docs/, scripts/, and build-configs/ folders</li>
+<li>🔄 <b>Hot-Reloadable Scripts</b> - Development scripts that work from any directory with proper path resolution</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🐧 Linux Service Management Features:</h3>
