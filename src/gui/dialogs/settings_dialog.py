@@ -179,19 +179,19 @@ class SettingsDialog(QDialog):
         self.theme_input = QComboBox()
         self.theme_input.addItems(ThemeManager.get_available_themes())
         self.theme_input.setCurrentText(self.initial_settings["theme_setting"])
-        
+
         # Add preview button next to theme combo
         theme_row_widget = QWidget()
         theme_row_layout = QHBoxLayout(theme_row_widget)
         theme_row_layout.setContentsMargins(0, 0, 0, 0)
         theme_row_layout.addWidget(self.theme_input)
-        
+
         # Theme preview button
         self.theme_preview_button = QPushButton("Preview")
         self.theme_preview_button.setToolTip("Preview the selected theme")
         self.theme_preview_button.clicked.connect(self.preview_theme)
         theme_row_layout.addWidget(self.theme_preview_button)
-        
+
         theme_layout.addRow("Theme:", theme_row_widget)
 
         # Theme info label
@@ -440,15 +440,15 @@ class SettingsDialog(QDialog):
     def preview_theme(self):
         """Show a preview of the selected theme."""
         selected_theme = self.theme_input.currentText()
-        
+
         # Get theme manager and colors for the selected theme
         theme_manager = ThemeManager()
         theme_colors = theme_manager.get_dialog_colors(selected_theme)
-        
+
         # Create theme preview message
         preview_msg = QMessageBox(self)
         preview_msg.setWindowTitle(f"Theme Preview: {selected_theme}")
-        
+
         # Set preview content based on theme
         preview_content = f"""
         <h3 style="color: {theme_colors['header_color']};">🎨 {selected_theme} Preview</h3>
@@ -469,12 +469,13 @@ class SettingsDialog(QDialog):
         </span>
         </div>
         """
-        
+
         preview_msg.setText(preview_content)
         preview_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-        
+
         # Apply theme colors to the message box
-        preview_msg.setStyleSheet(f"""
+        preview_msg.setStyleSheet(
+            f"""
             QMessageBox {{
                 background-color: {theme_colors['bg_color']};
                 color: {theme_colors['text_color']};
@@ -490,8 +491,9 @@ class SettingsDialog(QDialog):
             QMessageBox QPushButton:hover {{
                 background-color: {theme_colors['tip_border_color']};
             }}
-        """)
-        
+        """
+        )
+
         preview_msg.exec()
 
     def refresh_dialog_theme(self):
