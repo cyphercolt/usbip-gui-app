@@ -12,37 +12,37 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 class FileEncryption:
     """Simple file encryption for app state files"""
-    
+
     def __init__(self):
         self._key = None
-    
+
     def _get_system_key(self):
         """Generate a key based on system characteristics"""
         if self._key is not None:
             return self._key
-            
+
         # Combine various system identifiers to create a unique key
         system_info = {
-            'hostname': platform.node(),
-            'system': platform.system(),
-            'machine': platform.machine(),
-            'processor': platform.processor()[:50],  # Limit length
+            "hostname": platform.node(),
+            "system": platform.system(),
+            "machine": platform.machine(),
+            "processor": platform.processor()[:50],  # Limit length
         }
-        
+
         # Add some file system info for uniqueness
         try:
-            stat = os.stat('/')
-            system_info['fs_id'] = str(stat.st_dev)
+            stat = os.stat("/")
+            system_info["fs_id"] = str(stat.st_dev)
         except:
-            system_info['fs_id'] = 'unknown'
-        
+            system_info["fs_id"] = "unknown"
+
         # Create a deterministic string from system info
         key_string = json.dumps(system_info, sort_keys=True)
-        
+
         # Generate a deterministic salt based on system characteristics (without PID)
         salt_material = f"{platform.node()}{platform.system()}{system_info['fs_id']}"
         salt = hashlib.sha256(salt_material.encode()).digest()[:16]
-        
+
         # Derive encryption key using PBKDF2 with higher iterations
         kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
@@ -53,25 +53,25 @@ class FileEncryption:
         key = base64.urlsafe_b64encode(kdf.derive(key_string.encode()))
         self._key = key
         return key
-    
+
     def _get_legacy_key(self):
         """Generate legacy key for backward compatibility"""
         # Original key generation method from v1.0
         system_info = {
-            'hostname': platform.node(),
-            'system': platform.system(),
-            'machine': platform.machine(),
-            'processor': platform.processor()[:50],
+            "hostname": platform.node(),
+            "system": platform.system(),
+            "machine": platform.machine(),
+            "processor": platform.processor()[:50],
         }
-        
+
         try:
-            stat = os.stat('/')
-            system_info['fs_id'] = str(stat.st_dev)
+            stat = os.stat("/")
+            system_info["fs_id"] = str(stat.st_dev)
         except:
-            system_info['fs_id'] = 'unknown'
-        
+            system_info["fs_id"] = "unknown"
+
         key_string = json.dumps(system_info, sort_keys=True)
-        
+
         # Original static salt
         salt = b"usbip_gui_salt_v1"
         kdf = PBKDF2HMAC(
@@ -92,7 +92,7 @@ class FileEncryption:
         except Exception:
             # Don't leak error details in logs
             return None
-    
+
     def decrypt_data(self, encrypted_str):
         """Decrypt base64 string to dictionary with backward compatibility"""
         # Try new encryption method first
@@ -103,14 +103,14 @@ class FileEncryption:
             return json.loads(decrypted_bytes.decode())
         except Exception:
             pass
-        
+
         # Try legacy encryption method for backward compatibility
         try:
             encrypted_bytes = base64.urlsafe_b64decode(encrypted_str.encode())
             fernet = Fernet(self._get_legacy_key())
             decrypted_bytes = fernet.decrypt(encrypted_bytes)
             data = json.loads(decrypted_bytes.decode())
-            
+
             # Re-encrypt with new method for future use
             self._migrate_file_to_new_encryption(encrypted_str, data)
             return data
@@ -125,7 +125,7 @@ class FileEncryption:
             pass
         except Exception:
             pass
-    
+
     def save_encrypted_file(self, filepath, data):
         """Save data to encrypted file with atomic write"""
         encrypted_str = self.encrypt_data(data)
@@ -133,7 +133,7 @@ class FileEncryption:
             # Atomic write to prevent corruption
             temp_filepath = filepath + ".tmp"
             try:
-                with open(temp_filepath, 'w') as f:
+                with open(temp_filepath, "w") as f:
                     f.write(encrypted_str)
                     f.flush()
                     os.fsync(f.fileno())  # Force write to disk
@@ -147,19 +147,19 @@ class FileEncryption:
                     pass
                 return False
         return False
-    
+
     def load_encrypted_file(self, filepath):
         """Load data from encrypted file"""
         try:
             if not os.path.exists(filepath):
                 return {}
-            
-            with open(filepath, 'r') as f:
+
+            with open(filepath, "r") as f:
                 encrypted_str = f.read().strip()
-            
+
             if not encrypted_str:
                 return {}
-                
+
             return self.decrypt_data(encrypted_str) or {}
         except Exception:
             # Don't leak file path or error details
@@ -168,46 +168,46 @@ class FileEncryption:
 
 class MemoryProtection:
     """Enhanced memory protection for sensitive data"""
-    
+
     def __init__(self):
         # Generate a random key for each instance
         self._instance_key = secrets.token_hex(32)
-    
+
     def obfuscate_string(self, text):
         """Advanced obfuscation using random key and multiple passes"""
         if not text:
             return ""
-        
+
         # Convert to bytes for better security
-        text_bytes = text.encode('utf-8')
-        key_bytes = self._instance_key.encode('utf-8')
-        
+        text_bytes = text.encode("utf-8")
+        key_bytes = self._instance_key.encode("utf-8")
+
         # Multi-pass XOR with different key segments
         result = bytearray(text_bytes)
         for i, byte in enumerate(result):
             key_index = i % len(key_bytes)
             result[i] = byte ^ key_bytes[key_index] ^ (i & 0xFF)
-        
+
         return base64.urlsafe_b64encode(result).decode()
-    
+
     def deobfuscate_string(self, obfuscated):
         """Reverse the advanced obfuscation"""
         if not obfuscated:
             return ""
-        
+
         try:
             result = bytearray(base64.urlsafe_b64decode(obfuscated.encode()))
-            key_bytes = self._instance_key.encode('utf-8')
-            
+            key_bytes = self._instance_key.encode("utf-8")
+
             # Reverse the multi-pass XOR
             for i, byte in enumerate(result):
                 key_index = i % len(key_bytes)
                 result[i] = byte ^ key_bytes[key_index] ^ (i & 0xFF)
-            
-            return result.decode('utf-8')
+
+            return result.decode("utf-8")
         except Exception:
             return ""
-    
+
     def secure_zero_memory(self, data):
         """Attempt to securely zero memory (best effort)"""
         if isinstance(data, str):

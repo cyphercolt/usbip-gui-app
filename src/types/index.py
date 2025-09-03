@@ -1,15 +1,18 @@
 from typing import List, Dict, Any
 
+
 class Device:
     def __init__(self, name: str, id: str, is_bound: bool = False):
         self.name = name
         self.id = id
         self.is_bound = is_bound
 
+
 class ConnectionSettings:
     def __init__(self, ip_address: str, port: int):
         self.ip_address = ip_address
         self.port = port
+
 
 class USBIPManager:
     def __init__(self):

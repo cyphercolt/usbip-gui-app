@@ -14,7 +14,7 @@ def is_admin():
     if platform.system() != "Windows":
         # On Unix-like systems, check if running as root
         return os.geteuid() == 0
-    
+
     try:
         # Check if running as admin on Windows
         return ctypes.windll.shell32.IsUserAnAdmin()
@@ -27,33 +27,33 @@ def run_as_admin():
     if platform.system() != "Windows":
         print("Admin elevation is only supported on Windows")
         return False
-    
+
     if is_admin():
         # Already running as admin
         return True
-    
+
     try:
         # Re-run the current script with admin privileges
         script = sys.argv[0]
-        params = ' '.join(sys.argv[1:]) if len(sys.argv) > 1 else ''
-        
+        params = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else ""
+
         # Use ShellExecute to run with elevated privileges
         result = ctypes.windll.shell32.ShellExecuteW(
-            None, 
-            "runas", 
-            sys.executable, 
-            f'"{script}" {params}', 
-            None, 
-            1  # SW_SHOWNORMAL
+            None,
+            "runas",
+            sys.executable,
+            f'"{script}" {params}',
+            None,
+            1,  # SW_SHOWNORMAL
         )
-        
+
         # If successful, exit the current process
         if result > 32:  # Success
             return True
         else:
             print(f"Failed to elevate privileges. Error code: {result}")
             return False
-            
+
     except Exception as e:
         print(f"Error elevating privileges: {e}")
         return False
@@ -64,11 +64,11 @@ def check_and_elevate():
     if platform.system() != "Windows":
         # On Unix-like systems, don't need to elevate here
         return True
-    
+
     if not is_admin():
         print("🔒 Administrator privileges required for network operations on Windows")
         print("🚀 Attempting to elevate privileges...")
-        
+
         if run_as_admin():
             # The process has been re-launched with admin privileges
             # Exit the current non-admin process
@@ -77,7 +77,7 @@ def check_and_elevate():
             print("❌ Failed to obtain administrator privileges")
             print("⚠️  Some network operations may not work correctly")
             return False
-    
+
     print("✅ Running with administrator privileges")
     return True
 
@@ -112,14 +112,14 @@ def is_windows_usbipd_available():
     """Check if Windows USB/IP client tools are available (not the daemon)"""
     if platform.system() != "Windows":
         return True  # On Unix-like systems, assume standard usbip tools
-    
+
     try:
         result = subprocess.run(
             ["usbip", "--version"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=5
+            timeout=5,
         )
         return result.returncode == 0
     except Exception:

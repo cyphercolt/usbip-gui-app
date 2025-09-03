@@ -8,29 +8,29 @@ from PyQt6.QtGui import QPalette
 
 class ThemeManager:
     """Manages application themes and styling"""
-    
+
     THEMES = {
         "System Theme": "system",
-        "Light Theme": "light", 
+        "Light Theme": "light",
         "Dark Theme": "dark",
-        "OLED Dark": "oled"
+        "OLED Dark": "oled",
     }
-    
+
     def __init__(self):
         self.current_theme = "System Theme"
-    
+
     def set_theme(self, theme_name):
         """Set the current theme"""
         if theme_name in self.THEMES:
             self.current_theme = theme_name
-    
+
     def get_stylesheet(self, theme_name=None):
         """Get the stylesheet for the specified theme"""
         if theme_name is None:
             theme_name = self.current_theme
-            
+
         theme_key = self.THEMES.get(theme_name, "system")
-        
+
         if theme_key == "system":
             return ""  # Use system default
         elif theme_key == "light":
@@ -39,16 +39,16 @@ class ThemeManager:
             return self._get_dark_theme_css()
         elif theme_key == "oled":
             return self._get_oled_theme_css()
-        
+
         return ""
-    
+
     def get_dialog_colors(self, theme_name=None, palette=None):
         """Get theme-appropriate colors for dialogs"""
         if theme_name is None:
             theme_name = self.current_theme
-            
+
         theme_key = self.THEMES.get(theme_name, "system")
-        
+
         if theme_key == "light":
             return self._get_light_colors()
         elif theme_key == "dark":
@@ -57,7 +57,7 @@ class ThemeManager:
             return self._get_oled_colors()
         else:  # System theme
             return self._get_system_colors(palette)
-    
+
     def _get_light_theme_css(self):
         """Light theme stylesheet"""
         return """
@@ -79,7 +79,7 @@ class ThemeManager:
             QLabel { color: #000000; }
             QScrollArea { background-color: #ffffff; }
         """
-    
+
     def _get_dark_theme_css(self):
         """Dark theme stylesheet"""
         return """
@@ -110,7 +110,7 @@ class ThemeManager:
             QLabel { color: #ffffff; }
             QScrollArea { background-color: #2b2b2b; }
         """
-    
+
     def _get_oled_theme_css(self):
         """OLED dark theme stylesheet with pure black backgrounds"""
         return """
@@ -141,64 +141,64 @@ class ThemeManager:
             QLabel { color: #ffffff; }
             QScrollArea { background-color: #000000; }
         """
-    
+
     def _get_light_colors(self):
         """Light theme dialog colors"""
         return {
-            'bg_color': '#ffffff',
-            'text_color': '#333333',
-            'header_color': '#4CAF50',
-            'border_color': '#ddd',
-            'version_color': '#666',
-            'tip_bg_color': '#e8f5e8',
-            'tip_border_color': '#4CAF50'
+            "bg_color": "#ffffff",
+            "text_color": "#333333",
+            "header_color": "#4CAF50",
+            "border_color": "#ddd",
+            "version_color": "#666",
+            "tip_bg_color": "#e8f5e8",
+            "tip_border_color": "#4CAF50",
         }
-    
+
     def _get_dark_colors(self):
         """Dark theme dialog colors"""
         return {
-            'bg_color': '#2b2b2b',
-            'text_color': '#ffffff',
-            'header_color': '#4CAF50',
-            'border_color': '#555',
-            'version_color': '#ccc',
-            'tip_bg_color': '#1e3a1e',
-            'tip_border_color': '#4CAF50'
+            "bg_color": "#2b2b2b",
+            "text_color": "#ffffff",
+            "header_color": "#4CAF50",
+            "border_color": "#555",
+            "version_color": "#ccc",
+            "tip_bg_color": "#1e3a1e",
+            "tip_border_color": "#4CAF50",
         }
-    
+
     def _get_oled_colors(self):
         """OLED dark theme dialog colors"""
         return {
-            'bg_color': '#000000',
-            'text_color': '#ffffff',
-            'header_color': '#4CAF50',
-            'border_color': '#333',
-            'version_color': '#ccc',
-            'tip_bg_color': '#001100',
-            'tip_border_color': '#4CAF50'
+            "bg_color": "#000000",
+            "text_color": "#ffffff",
+            "header_color": "#4CAF50",
+            "border_color": "#333",
+            "version_color": "#ccc",
+            "tip_bg_color": "#001100",
+            "tip_border_color": "#4CAF50",
         }
-    
+
     def _get_system_colors(self, palette):
         """System theme dialog colors based on system palette"""
         if palette is None:
             # Fallback to light theme if no palette provided
             return self._get_light_colors()
-            
+
         is_dark_mode = palette.color(QPalette.ColorRole.Window).lightness() < 128
-        
+
         if is_dark_mode:
             return self._get_dark_colors()
         else:
             return {
-                'bg_color': '#f9f9f9',
-                'text_color': '#333333',
-                'header_color': '#4CAF50',
-                'border_color': '#ddd',
-                'version_color': '#666',
-                'tip_bg_color': '#e8f5e8',
-                'tip_border_color': '#4CAF50'
+                "bg_color": "#f9f9f9",
+                "text_color": "#333333",
+                "header_color": "#4CAF50",
+                "border_color": "#ddd",
+                "version_color": "#666",
+                "tip_bg_color": "#e8f5e8",
+                "tip_border_color": "#4CAF50",
             }
-    
+
     @classmethod
     def get_available_themes(cls):
         """Get list of available theme names"""

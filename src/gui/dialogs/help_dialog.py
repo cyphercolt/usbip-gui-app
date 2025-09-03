@@ -2,60 +2,73 @@
 Help Dialog - Quick start guide and instructions
 """
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QScrollArea, QWidget
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QLabel,
+    QDialogButtonBox,
+    QScrollArea,
+    QWidget,
+)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 
 class HelpDialog(QDialog):
     """Help dialog showing quick start instructions"""
-    
-    def __init__(self, parent=None, theme_colors=None, auto_reconnect_status=None, auto_refresh_status=None):
+
+    def __init__(
+        self,
+        parent=None,
+        theme_colors=None,
+        auto_reconnect_status=None,
+        auto_refresh_status=None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Help - Quick Start Guide")
         self.setMinimumWidth(500)
         self.setMinimumHeight(450)
-        
+
         # Get theme colors or use defaults
         if theme_colors:
             self.colors = theme_colors
         else:
             self.colors = self._get_default_colors()
-        
+
         # Auto feature status
         self.auto_reconnect_status = auto_reconnect_status or {
-            'enabled': False,
-            'interval': 30
+            "enabled": False,
+            "interval": 30,
         }
         self.auto_refresh_status = auto_refresh_status or {
-            'enabled': False,
-            'interval': 60
+            "enabled": False,
+            "interval": 60,
         }
-        
+
         self._setup_ui()
-    
+
     def _get_default_colors(self):
         """Default color scheme"""
         return {
-            'bg_color': '#f9f9f9',
-            'text_color': '#333333',
-            'header_color': '#4CAF50',
-            'border_color': '#ddd',
-            'tip_bg_color': '#e8f5e8',
-            'tip_border_color': '#4CAF50'
+            "bg_color": "#f9f9f9",
+            "text_color": "#333333",
+            "header_color": "#4CAF50",
+            "border_color": "#ddd",
+            "tip_bg_color": "#e8f5e8",
+            "tip_border_color": "#4CAF50",
         }
-    
+
     def _setup_ui(self):
         """Setup the dialog UI"""
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
 
-        bg_color = self.colors['bg_color']
-        text_color = self.colors['text_color']
-        header_color = self.colors['header_color']
-        border_color = self.colors['border_color']
-        tip_bg_color = self.colors['tip_bg_color']
-        tip_border_color = self.colors['tip_border_color']
+        bg_color = self.colors["bg_color"]
+        text_color = self.colors["text_color"]
+        header_color = self.colors["header_color"]
+        border_color = self.colors["border_color"]
+        tip_bg_color = self.colors["tip_bg_color"]
+        tip_border_color = self.colors["tip_border_color"]
 
         # Title
         title_label = QLabel("🚀 USBIP GUI - Quick Start Guide")
@@ -71,21 +84,32 @@ class HelpDialog(QDialog):
         scroll_area = QScrollArea()
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
-        
+
         instructions_label = QLabel()
         instructions_label.setWordWrap(True)
         instructions_label.setTextFormat(Qt.TextFormat.RichText)
         instructions_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        instructions_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        instructions_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
         scroll_layout.addWidget(instructions_label)
-        
+
         scroll_area.setWidget(scroll_widget)
         scroll_area.setWidgetResizable(True)
-        
+
         # Build the help content with theme-appropriate colors
-        auto_reconnect_status = 'Currently enabled' if self.auto_reconnect_status['enabled'] else 'Currently disabled'
-        auto_refresh_status = 'Currently enabled' if self.auto_refresh_status['enabled'] else 'Currently disabled'
-        
+        auto_reconnect_status = (
+            "Currently enabled"
+            if self.auto_reconnect_status["enabled"]
+            else "Currently disabled"
+        )
+        auto_refresh_status = (
+            "Currently enabled"
+            if self.auto_refresh_status["enabled"]
+            else "Currently disabled"
+        )
+
         help_content = f"""
 <h3 style="color: {header_color}; margin-top: 0;">📋 Basic Setup:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
@@ -198,16 +222,18 @@ class HelpDialog(QDialog):
 <b>💡 Tip:</b> For detailed technical information, recent updates, and source code, click the <b>About</b> button to access comprehensive project details and the GitHub repository.
 </p>
         """
-        
+
         instructions_label.setText(help_content)
-        instructions_label.setStyleSheet(f"""
+        instructions_label.setStyleSheet(
+            f"""
             font-size: 12px; 
             background-color: {bg_color}; 
             color: {text_color};
             border: 1px solid {border_color}; 
             border-radius: 5px; 
             padding: 10px;
-        """)
+        """
+        )
         layout.addWidget(scroll_area)
 
         # Close button

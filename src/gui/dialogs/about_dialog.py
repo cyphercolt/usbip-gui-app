@@ -2,7 +2,14 @@
 About Dialog - Application information and credits
 """
 
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QDialogButtonBox, QScrollArea, QWidget
+from PyQt6.QtWidgets import (
+    QDialog,
+    QVBoxLayout,
+    QLabel,
+    QDialogButtonBox,
+    QScrollArea,
+    QWidget,
+)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 import datetime
@@ -10,41 +17,41 @@ import datetime
 
 class AboutDialog(QDialog):
     """About dialog showing application information"""
-    
+
     def __init__(self, parent=None, theme_colors=None):
         super().__init__(parent)
         self.setWindowTitle("About USBIP GUI")
         self.setMinimumWidth(500)
         self.setMinimumHeight(600)
-        
+
         # Get theme colors or use defaults
         if theme_colors:
             self.colors = theme_colors
         else:
             self.colors = self._get_default_colors()
-        
+
         self._setup_ui()
-    
+
     def _get_default_colors(self):
         """Default color scheme"""
         return {
-            'bg_color': '#f9f9f9',
-            'text_color': '#333333',
-            'header_color': '#4CAF50',
-            'border_color': '#ddd',
-            'version_color': '#666'
+            "bg_color": "#f9f9f9",
+            "text_color": "#333333",
+            "header_color": "#4CAF50",
+            "border_color": "#ddd",
+            "version_color": "#666",
         }
-    
+
     def _setup_ui(self):
         """Setup the dialog UI"""
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
 
-        bg_color = self.colors['bg_color']
-        text_color = self.colors['text_color']
-        header_color = self.colors['header_color']
-        version_color = self.colors['version_color']
-        border_color = self.colors['border_color']
+        bg_color = self.colors["bg_color"]
+        text_color = self.colors["text_color"]
+        header_color = self.colors["header_color"]
+        version_color = self.colors["version_color"]
+        border_color = self.colors["border_color"]
         title_color = header_color
         link_color = "#64B5F6" if bg_color == "#000000" else "#2196F3"
 
@@ -59,27 +66,34 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label)
 
         # Version and description
-        version_label = QLabel("Version 2.2.2 - Advanced USB/IP Management Tool with Cross-Platform Service Management")
+        version_label = QLabel(
+            "Version 2.2.2 - Advanced USB/IP Management Tool with Cross-Platform Service Management"
+        )
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_label.setStyleSheet(f"font-size: 12px; color: {version_color}; margin-bottom: 15px;")
+        version_label.setStyleSheet(
+            f"font-size: 12px; color: {version_color}; margin-bottom: 15px;"
+        )
         layout.addWidget(version_label)
 
         # Content area with scroll
         scroll_area = QScrollArea()
         scroll_widget = QWidget()
         scroll_layout = QVBoxLayout(scroll_widget)
-        
+
         content_label = QLabel()
         content_label.setWordWrap(True)
         content_label.setOpenExternalLinks(True)
         content_label.setTextFormat(Qt.TextFormat.RichText)
         content_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        content_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        content_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
         scroll_layout.addWidget(content_label)
-        
+
         scroll_area.setWidget(scroll_widget)
         scroll_area.setWidgetResizable(True)
-        
+
         # Build the about content with theme-appropriate colors
         current_year = datetime.datetime.now().year
         about_content = f"""
@@ -178,17 +192,19 @@ class AboutDialog(QDialog):
 <p style="margin: 5px 0; font-size: 10px; color: {version_color};">Free and open source software - Continuously improved with user feedback</p>
 </div>
         """
-        
+
         content_label.setText(about_content)
-        content_label.setStyleSheet(f"""
+        content_label.setStyleSheet(
+            f"""
             font-size: 12px; 
             background-color: {bg_color}; 
             color: {text_color};
             border: 1px solid {border_color}; 
             border-radius: 5px; 
             padding: 10px;
-        """)
-        
+        """
+        )
+
         layout.addWidget(scroll_area)
 
         # Close button
