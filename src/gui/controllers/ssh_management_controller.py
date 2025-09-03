@@ -10,6 +10,7 @@ This controller handles all SSH-related operations including:
 
 import paramiko
 import platform
+import time
 from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QDialogButtonBox, QCheckBox, QTableWidgetItem
 from ..widgets.toggle_button import ToggleButton
 from security.validator import SecurityValidator, SecureCommandBuilder
@@ -286,6 +287,11 @@ class SSHManagementController:
                 if self.remote_os_type == 'windows' and self.remote_has_usbipd:
                     self.main_window.save_windows_device_description(ip, busid, desc)
                     self.main_window.append_simple_message(f"✅ Device '{desc}' bound successfully (Windows usbipd)")
+                    
+                    # Windows-specific: Add delay after bind to allow device to become available for attach
+                    self.main_window.append_simple_message("⏳ Waiting for Windows usbipd to export device...")
+                    time.sleep(2.0)  # 2 second delay for Windows to properly export the device
+                    self.main_window.append_simple_message("✅ Device ready for attachment")
                 else:
                     self.main_window.append_simple_message(f"✅ Device '{desc}' bound successfully")
                 # Update sorting item

@@ -42,6 +42,25 @@ class DeviceManagementController(QObject):
         # Call the actual detach method
         self.detach_local_device(port, desc, state)
         
+    def reset_device_toggle_state(self, busid, attached=False):
+        """Reset the toggle button state for a specific device"""
+        busid = busid.strip()
+        for row in range(self.main_window.device_table.rowCount()):
+            busid_item = self.main_window.device_table.item(row, 0)
+            toggle_btn = self.main_window.device_table.cellWidget(row, 2)
+            
+            if busid_item and toggle_btn:
+                table_busid = busid_item.text().strip()
+                # Match the busid
+                if table_busid == busid:
+                    toggle_btn.blockSignals(True)
+                    toggle_btn.setChecked(attached)
+                    toggle_btn.blockSignals(False)
+                    self.main_window.append_verbose_message(f"🔧 Reset toggle state for {busid}: {'ATTACHED' if attached else 'DETACHED'}")
+                    # Update sorting items too
+                    self.main_window.update_device_table_sorting_items(busid, attached=attached)
+                    break
+        
     def attach_all_devices(self):
         """Attach all detached devices."""
         ip = self.main_window.ip_input.currentText()
@@ -297,7 +316,7 @@ class DeviceManagementController(QObject):
                             attached_descs.add(desc)
                 
             else:
-                # Unix-like systems - use description matching approach
+                # Unix-like systems - extract both busids and descriptions
                 port_result = subprocess.run(
                     ["usbip", "port"],
                     stdout=subprocess.PIPE,
@@ -316,10 +335,16 @@ class DeviceManagementController(QObject):
                     if line.startswith("Port"):
                         current_port = line.split()[1].replace(":", "")
                         current_busid = None  # Reset busid for new port
+                    elif current_port and line and line[0].isdigit() and '-' in line:
+                        # Extract busid from lines like "3-2.3 : ..."
+                        current_busid = line.split()[0]
+                        attached_busids.add(current_busid)
+                        self.main_window.append_verbose_message(f"🔍 Found attached busid: {current_busid}")
                     elif current_port and line and ":" in line and not line.startswith("Port"):
-                        # Linux: Description line without explicit busid in port output
+                        # Linux: Description line
                         desc = line.strip()
                         attached_descs.add(desc)
+                        self.main_window.append_verbose_message(f"🔍 Found attached description: {desc}")
                         # For Linux, we'll rely on description matching rather than busid extraction
 
             # List remote devices
@@ -336,6 +361,8 @@ class DeviceManagementController(QObject):
             devices = self.parse_usbip_list(output)
 
             # Add remote devices
+            self.main_window.append_verbose_message(f"🔍 Adding remote devices. attached_busids: {attached_busids}")
+            self.main_window.append_verbose_message(f"🔍 Adding remote devices. attached_descs: {list(attached_descs)[:3]}...")  # Show first 3
             self._add_remote_devices(devices, ip, attached_descs, attached_busids, saved_auto_states)
             
             # Add devices that are attached but no longer in remote list (using mappings)
@@ -343,6 +370,9 @@ class DeviceManagementController(QObject):
             
             # List locally attached devices (usbip port) that aren't in the remote list
             self._add_local_attached_devices(port_output, ip, saved_auto_states)
+            
+            # Final pass: Update toggle states based on current attachment status
+            self._update_all_toggle_states(attached_busids, attached_descs)
             
         except subprocess.TimeoutExpired:
             self.main_window.append_simple_message(f"⏱️ Timeout connecting to {ip} - Check if IP is correct and usbip daemon is running")
@@ -369,9 +399,49 @@ class DeviceManagementController(QObject):
             
             # Set initial state WITHOUT triggering signal
             toggle_btn.blockSignals(True)
-            # Use busid matching instead of description matching for more reliable state detection
-            is_attached = clean_busid in attached_busids
+            
+            # Check if device is attached using multiple methods
+            is_attached = False
+            
+            # Method 1: Direct busid match (works for Windows)
+            if clean_busid in attached_busids:
+                is_attached = True
+                self.main_window.append_verbose_message(f"🔍 Device {clean_busid} detected as attached via direct busid match")
+            
+            # Method 2: Check device mapping (for devices that were previously attached)
+            if not is_attached:
+                mapping = self.main_window.get_device_mapping(clean_busid)
+                if mapping:
+                    port_busid = mapping.get('port_busid')
+                    if port_busid and port_busid in attached_busids:
+                        is_attached = True
+                        self.main_window.append_verbose_message(f"🔍 Device {clean_busid} detected as attached via mapping to {port_busid}")
+            
+            # Method 3: Description matching (fallback for Linux)
+            if not is_attached:
+                device_desc = dev["desc"].lower().strip()
+                for attached_desc in attached_descs:
+                    if device_desc in attached_desc.lower() or attached_desc.lower() in device_desc:
+                        is_attached = True
+                        self.main_window.append_verbose_message(f"🔍 Device {clean_busid} detected as attached via description match: '{dev['desc']}'")
+                        break
+            
+            # Method 4: Check if device appears in Windows persisted list
+            if not is_attached and platform.system() == "Windows":
+                # Check Windows persisted device list
+                try:
+                    data = self.main_window.file_crypto.load_encrypted_file("windows_persisted_devices.enc")
+                    persisted_devices = data.get('devices', {})
+                    for guid, device_info in persisted_devices.items():
+                        if clean_busid in device_info.get('name', '') or dev["desc"] in device_info.get('name', ''):
+                            is_attached = True
+                            self.main_window.append_verbose_message(f"🔍 Device {clean_busid} detected as attached via Windows persistence")
+                            break
+                except:
+                    pass  # Ignore errors reading persistence file
+            
             toggle_btn.setChecked(is_attached)
+            self.main_window.append_verbose_message(f"🔍 Device {clean_busid} attachment state: {'ATTACHED' if is_attached else 'DETACHED'}")
             toggle_btn.blockSignals(False)
             
             # Now connect the signal handler - use clean busid
@@ -405,6 +475,19 @@ class DeviceManagementController(QObject):
         data = self.main_window.file_crypto.load_encrypted_file("device_mapping.enc")
         mappings = data.get('mappings', {})
         
+        # Build set of busids and descriptions already in table to prevent duplicates
+        table_busids = set()
+        table_descs = set()
+        for row in range(self.main_window.device_table.rowCount()):
+            busid_item = self.main_window.device_table.item(row, 0)
+            desc_item = self.main_window.device_table.item(row, 1)
+            if busid_item:
+                busid_text = busid_item.text()
+                if not busid_text.startswith("Port"):  # Only track actual busids
+                    table_busids.add(busid_text)
+            if desc_item:
+                table_descs.add(desc_item.text().lower().strip())
+        
         for remote_busid, mapping_info in mappings.items():
             port_busid = mapping_info.get('port_busid')
             
@@ -418,18 +501,16 @@ class DeviceManagementController(QObject):
                 is_attached = any(remote_desc in desc or desc in remote_desc for desc in attached_descs)
             
             if is_attached:
-                # This device is attached but not in remote list - add it
+                # Check if already in table (prevent duplicates)
                 remote_desc = mapping_info.get('remote_desc', 'Unknown Device')
+                normalized_desc = remote_desc.lower().strip()
                 
-                # Check if we already added this device from the remote list
-                already_in_table = False
-                for row in range(self.main_window.device_table.rowCount()):
-                    busid_item = self.main_window.device_table.item(row, 0)
-                    if busid_item and busid_item.text() == remote_busid:
-                        already_in_table = True
-                        break
+                already_in_table = (remote_busid in table_busids or 
+                                  normalized_desc in table_descs)
                 
                 if not already_in_table:
+                    self.main_window.append_verbose_message(f"🔗 Adding mapped device {remote_busid}: {remote_desc}")
+                    
                     row = self.main_window.device_table.rowCount()
                     self.main_window.device_table.insertRow(row)
                     self.main_window.device_table.setItem(row, 0, self.main_window.create_table_item_with_tooltip(remote_busid))
@@ -467,12 +548,20 @@ class DeviceManagementController(QObject):
                         lambda state, ip=ip, busid=remote_busid: self.main_window.toggle_auto_reconnect(ip, busid, state, "local")
                     )
                     self.main_window.device_table.setCellWidget(row, 3, auto_btn)
+                    
+                    # Add to tracking sets to prevent further duplicates
+                    table_busids.add(remote_busid)
+                    table_descs.add(normalized_desc)
+                else:
+                    self.main_window.append_verbose_message(f"🔍 Skipping duplicate mapped device: {remote_desc} (busid: {remote_busid})")
 
     def _add_local_attached_devices(self, port_output, ip, saved_auto_states):
         """Add locally attached devices that aren't in the remote list."""
         # Build set of descriptions and busids already added to the table
         table_descs = set()
         table_busids = set()
+        table_remote_busids = set()  # Track remote busids already in table
+        
         for row in range(self.main_window.device_table.rowCount()):
             desc_item = self.main_window.device_table.item(row, 1)
             busid_item = self.main_window.device_table.item(row, 0)
@@ -483,6 +572,7 @@ class DeviceManagementController(QObject):
                 busid_text = busid_item.text()
                 if not busid_text.startswith("Port"):  # Only add actual busids
                     table_busids.add(busid_text)
+                    table_remote_busids.add(busid_text)
         
         current_port = None
         current_busid = None
@@ -523,17 +613,37 @@ class DeviceManagementController(QObject):
                     if not ip:
                         self.main_window.append_verbose_message(f"🔍 No IP address available")
                 
-                # Check if this device is already in the table (by busid or mapping)
+                # Check if this device is already in the table (by busid, mapping, or description)
                 remote_busid = self.main_window.get_remote_busid_for_port(current_busid)
                 
-                # Skip if already in table (either by port busid or remote busid)
-                already_in_table = (current_busid in table_busids or 
-                                  (remote_busid and remote_busid in table_busids))
+                # Enhanced duplicate detection
+                already_in_table = False
+                
+                # Check by current busid
+                if current_busid in table_busids:
+                    already_in_table = True
+                    self.main_window.append_verbose_message(f"🔍 Device {current_busid} already in table by busid")
+                
+                # Check by remote busid
+                if remote_busid and remote_busid in table_remote_busids:
+                    already_in_table = True
+                    self.main_window.append_verbose_message(f"🔍 Device {remote_busid} already in table by remote busid")
+                
+                # Check by description (normalize for comparison)
+                normalized_desc = desc.lower().strip()
+                for existing_desc in table_descs:
+                    if normalized_desc == existing_desc.lower().strip():
+                        already_in_table = True
+                        self.main_window.append_verbose_message(f"🔍 Device already in table by description: '{desc}'")
+                        break
                 
                 if not already_in_table:
                     row = self.main_window.device_table.rowCount()
                     self.main_window.device_table.insertRow(row)
-                    self.main_window.device_table.setItem(row, 0, self.main_window.create_table_item_with_tooltip(f"Port {current_port}"))
+                    
+                    # Use remote busid if available for consistency, otherwise use port format
+                    display_busid = remote_busid if remote_busid else f"Port {current_port}"
+                    self.main_window.device_table.setItem(row, 0, self.main_window.create_table_item_with_tooltip(display_busid))
                     self.main_window.device_table.setItem(row, 1, self.main_window.create_table_item_with_tooltip(desc))
                     
                     # Create toggle button for local devices
@@ -570,6 +680,62 @@ class DeviceManagementController(QObject):
                         lambda state, ip=ip, busid=busid_for_auto: self.main_window.toggle_auto_reconnect(ip, busid, state, "local")
                     )
                     self.main_window.device_table.setCellWidget(row, 3, auto_btn)
+                else:
+                    self.main_window.append_verbose_message(f"🔍 Skipping duplicate device: {desc} (busid: {current_busid})")
+
+    def _update_all_toggle_states(self, attached_busids, attached_descs):
+        """Final pass to ensure all toggle states are correct"""
+        self.main_window.append_verbose_message("🔍 Final pass: Updating all toggle states...")
+        
+        for row in range(self.main_window.device_table.rowCount()):
+            busid_item = self.main_window.device_table.item(row, 0)
+            desc_item = self.main_window.device_table.item(row, 1)
+            toggle_btn = self.main_window.device_table.cellWidget(row, 2)
+            
+            if busid_item and desc_item and toggle_btn:
+                busid = busid_item.text().strip()
+                desc = desc_item.text().strip()
+                
+                # Skip port entries
+                if busid.startswith("Port"):
+                    continue
+                
+                # Determine if device should be marked as attached
+                is_attached = False
+                
+                # Check direct busid match
+                if busid in attached_busids:
+                    is_attached = True
+                    self.main_window.append_verbose_message(f"🔍 Final check: {busid} attached via direct match")
+                
+                # Check mapping
+                if not is_attached:
+                    mapping = self.main_window.get_device_mapping(busid)
+                    if mapping:
+                        port_busid = mapping.get('port_busid')
+                        if port_busid and port_busid in attached_busids:
+                            is_attached = True
+                            self.main_window.append_verbose_message(f"🔍 Final check: {busid} attached via mapping to {port_busid}")
+                
+                # Check description match
+                if not is_attached:
+                    desc_lower = desc.lower()
+                    for attached_desc in attached_descs:
+                        if desc_lower in attached_desc.lower() or attached_desc.lower() in desc_lower:
+                            is_attached = True
+                            self.main_window.append_verbose_message(f"🔍 Final check: {busid} attached via description")
+                            break
+                
+                # Update toggle state if different
+                current_state = toggle_btn.isChecked()
+                if current_state != is_attached:
+                    self.main_window.append_verbose_message(f"🔧 Correcting toggle state for {busid}: {current_state} -> {is_attached}")
+                    toggle_btn.blockSignals(True)
+                    toggle_btn.setChecked(is_attached)
+                    toggle_btn.blockSignals(False)
+                    
+                    # Update sorting items too
+                    self.main_window.update_device_table_sorting_items(busid, attached=is_attached)
 
     def detach_local_device(self, port, desc, state):
         """Detach a local device by port."""
@@ -603,13 +769,83 @@ class DeviceManagementController(QObject):
             
             result = self.main_window.run_sudo(cmd)
             if not result or result.returncode != 0:
-                self.main_window.append_simple_message(f"❌ Failed to attach device {desc}")
+                # Handle specific error cases
+                error_msg = ""
+                if result and result.stderr:
+                    error_msg = result.stderr.strip()
+                    
+                if "Device busy (exported)" in error_msg:
+                    self.main_window.append_simple_message(f"⚠️ Device {desc} ({busid}) is busy - attempting retry...")
+                    self.main_window.append_verbose_message(f"Error: {error_msg}\n")
+                    
+                    # Retry once after a short delay (common with Windows usbipd timing)
+                    time.sleep(1.5)  # 1.5 second delay before retry
+                    self.main_window.append_verbose_message(f"🔄 Retrying attach for {busid}...\n")
+                    
+                    # Retry the attach command
+                    retry_result = self.main_window.run_sudo(cmd)
+                    if retry_result and retry_result.returncode == 0:
+                        self.main_window.append_simple_message(f"✅ Device {desc} ({busid}) attached successfully on retry")
+                        # Continue with normal success logic
+                        result = retry_result
+                    else:
+                        self.main_window.append_simple_message(f"❌ Device {desc} ({busid}) still busy after retry")
+                        self.main_window.append_simple_message("💡 Try waiting a moment, then detach first, or check if device is already attached on another port")
+                        
+                        # Check if device is already attached elsewhere
+                        port_cmd = get_platform_usbip_port_command()
+                        try:
+                            port_result = subprocess.run(
+                                port_cmd,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                text=True,
+                                timeout=5,
+                                creationflags=self.get_subprocess_creation_flags()
+                            )
+                            
+                            if port_result.returncode == 0 and port_result.stdout:
+                                # Check if this device is already attached on another port
+                                for line in port_result.stdout.splitlines():
+                                    if busid in line or desc.split("(")[0].strip() in line:
+                                        self.main_window.append_simple_message(f"🔍 Device appears to already be attached: {line.strip()}")
+                                        break
+                        except:
+                            pass  # Ignore errors in port check
+                        
+                        # Reset toggle button to detached state after failed attach
+                        self.reset_device_toggle_state(busid, attached=False)
+                        
+                        # Re-enable all buttons after failed attach
+                        self.main_window.enable_all_device_buttons()
+                        return False
+                    
+                elif "Permission denied" in error_msg:
+                    self.main_window.append_simple_message(f"❌ Permission denied - check sudo access")
+                    self.main_window.append_verbose_message(f"Error: {error_msg}\n")
+                    # Reset toggle button to detached state after permission error
+                    self.reset_device_toggle_state(busid, attached=False)
+                    # Re-enable all buttons after permission error
+                    self.main_window.enable_all_device_buttons()
+                    return False
+                else:
+                    self.main_window.append_simple_message(f"❌ Failed to attach device {desc} ({busid})")
+                    self.main_window.append_verbose_message(f"Error: {error_msg}\n")
+                    # Reset toggle button to detached state after general attach error
+                    self.reset_device_toggle_state(busid, attached=False)
+                    # Re-enable all buttons after general attach error
+                    self.main_window.enable_all_device_buttons()
+                    return False
+                
                 if result:
                     self.main_window.append_verbose_message(f"Attach command failed with exit code {result.returncode}\n")
-                    if result.stderr:
-                        self.main_window.append_verbose_message(f"Error: {result.stderr.strip()}\n")
                 else:
                     self.main_window.append_verbose_message("Attach command failed or returned no output.\n")
+                
+                # Reset toggle button to detached state after any attach failure
+                self.reset_device_toggle_state(busid, attached=False)
+                # Re-enable all buttons after any attach failure
+                self.main_window.enable_all_device_buttons()
                 return False
             
             # Check if attach was actually successful by looking for success message
@@ -619,10 +855,17 @@ class DeviceManagementController(QObject):
             elif result.stderr and ("successfully attached" in result.stderr.lower() or "succesfully attached" in result.stderr.lower()):
                 success_detected = True
             
+            # For Windows, also check if command completed without explicit error
+            if not success_detected and platform.system() == "Windows" and result.returncode == 0:
+                # Windows usbip often succeeds without explicit success message
+                if not result.stderr or "error" not in result.stderr.lower():
+                    success_detected = True
+                    self.main_window.append_verbose_message("Windows attach: Assuming success based on exit code and no errors\n")
+            
             if not success_detected:
-                self.main_window.append_simple_message(f"❌ Device {desc} attach may have failed - no success confirmation")
-                self.main_window.append_verbose_message("No 'successfully attached' message found in command output.\n")
-                # Don't return False here - continue and check port list
+                self.main_window.append_simple_message(f"⚠️ Device {desc} attach status unclear - checking port list...")
+                self.main_window.append_verbose_message("No clear success confirmation in command output.\n")
+                # Don't return False here - continue and check port list to verify
             
             # After successful attach, find which port it was assigned to
             time.sleep(0.5)  # Give time for device to appear in port list
