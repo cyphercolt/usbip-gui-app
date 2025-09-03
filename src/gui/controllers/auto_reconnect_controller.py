@@ -1,5 +1,6 @@
 """Auto-reconnect controller for managing automatic device reconnection logic."""
 
+import time
 from PyQt6.QtCore import QObject
 
 
@@ -58,7 +59,7 @@ class AutoReconnectController(QObject):
                 elif table_type == "remote" and self.should_auto_bind_device(ip, busid):
                     self.attempt_auto_bind(ip, busid, device_key)
 
-            except Exception as e:
+            except Exception:
                 continue  # Skip malformed device keys
 
     def should_auto_reconnect_device(self, ip, busid):
@@ -193,6 +194,10 @@ class AutoReconnectController(QObject):
 
         if success:
             self.main_window.append_simple_message(f"✅ Auto-bind successful: {busid}")
+
+            # Add delay for Windows to properly export the device
+            time.sleep(1.0)  # 1 second delay to allow device to become available
+
             self.main_window.append_simple_message(
                 "🔄 Refreshing local devices to show newly bound device..."
             )
@@ -201,8 +206,8 @@ class AutoReconnectController(QObject):
                 del self.main_window.auto_reconnect_attempts[device_key]
             # Update the toggle button state
             self.main_window.update_remote_toggle_state(busid, True)
-            # Refresh local devices to show newly bound device (preserve state)
-            self.main_window.refresh_local_devices_silently()
+            # Refresh local devices to show all bound devices (not just attached)
+            self.main_window.device_management_controller.load_devices()
         else:
             if (
                 self.main_window.auto_reconnect_attempts[device_key]
