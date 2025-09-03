@@ -8,6 +8,14 @@ dist/
 build/
 .eggs/
 
+# PyInstaller build artifacts (keep .spec files but ignore executables)
+USB-IP-GUI
+USB-IP-GUI.exe
+USB-IP-GUI-Linux/
+USB-IP-GUI-Windows/
+*.tar.gz
+*.zip
+
 # Virtual environments
 venv/
 ENV/
