@@ -698,6 +698,14 @@ class SSHManagementController:
         if hasattr(self.main_window, "ssh_client"):
             self.main_window.ssh_client = None
 
+        # Clear saved credentials to prevent auto-refresh from reconnecting
+        if hasattr(self.main_window, "last_ssh_username"):
+            self.main_window.last_ssh_username = None
+        if hasattr(self.main_window, "last_ssh_password"):
+            self.main_window.last_ssh_password = None
+        if hasattr(self.main_window, "last_ssh_ip"):
+            self.main_window.last_ssh_ip = None
+
         self.main_window.remote_table.setRowCount(0)
 
         # Hide SSH-related buttons
@@ -706,13 +714,20 @@ class SSHManagementController:
         self.main_window.usbipd_service_button.setVisible(False)
         self.main_window.linux_usbip_service_button.setVisible(False)
 
+        # Notify user of successful disconnect
+        self.main_window.append_simple_message(
+            "🔌 SSH disconnected - auto-refresh will not reconnect"
+        )
+
     def refresh_with_saved_credentials(self):
         """Refresh remote devices using previously saved SSH credentials"""
-        # If you want to use last SSH credentials, store them after successful SSH login
+        # Check if valid SSH credentials are available
         if (
             hasattr(self.main_window, "last_ssh_username")
             and hasattr(self.main_window, "last_ssh_password")
             and hasattr(self.main_window, "last_ssh_accept")
+            and self.main_window.last_ssh_username  # Ensure not None/empty
+            and self.main_window.last_ssh_password  # Ensure not None/empty
         ):
 
             # Instead of saving UI state, save from persistent storage before any operations

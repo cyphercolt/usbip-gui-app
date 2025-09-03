@@ -1364,10 +1364,12 @@ class DeviceManagementController(QObject):
         # Use full device refresh to properly handle all device types
         self.load_devices()
 
-        # If SSH is connected, also refresh remote devices
+        # If SSH credentials are available and valid, also refresh remote devices
         if (
             hasattr(self.main_window, "last_ssh_username")
             and self.main_window.last_ssh_username
+            and hasattr(self.main_window, "last_ssh_password")
+            and self.main_window.last_ssh_password
         ):
             self.main_window.ssh_management_controller.refresh_with_saved_credentials()
             self.main_window.append_simple_message(
