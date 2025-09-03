@@ -546,6 +546,9 @@ class MainWindow(QMainWindow):
         # Reset ping status when IP changes
         ip = self.ip_input.currentText()
         if ip:
+            # Save the current IP selection for persistence
+            self.data_persistence_controller.save_current_ip()
+
             self.update_ping_status("unknown")
             # Ping immediately when IP changes
             if SecurityValidator.validate_ip_or_hostname(ip):
