@@ -35,7 +35,7 @@ jobs:
     - name: Test Windows build
       run: |
         .\venv\Scripts\activate
-        pyinstaller USB-IP-GUI.spec --clean
+        pyinstaller build-configs\USB-IP-GUI.spec --clean
         
     - name: Verify Windows executable
       run: |
@@ -78,7 +78,7 @@ jobs:
     - name: Test Linux build
       run: |
         source venv/bin/activate
-        pyinstaller USB-IP-GUI-linux.spec --clean
+        pyinstaller build-configs/USB-IP-GUI-linux.spec --clean
         
     - name: Verify Linux executable
       run: |

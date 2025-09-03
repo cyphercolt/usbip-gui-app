@@ -41,7 +41,7 @@ jobs:
     - name: Build Windows executable
       run: |
         .\venv\Scripts\activate
-        pyinstaller USB-IP-GUI.spec --clean
+        pyinstaller build-configs\USB-IP-GUI.spec --clean
         
     - name: Create Windows release package
       run: |
@@ -100,12 +100,12 @@ jobs:
     - name: Build Linux executable
       run: |
         source venv/bin/activate
-        pyinstaller USB-IP-GUI-linux.spec --clean
+        pyinstaller build-configs/USB-IP-GUI-linux.spec --clean
         
     - name: Create Linux release package
       run: |
-        chmod +x prepare-release-linux.sh
-        ./prepare-release-linux.sh
+        chmod +x scripts/prepare-release-linux.sh
+        ./scripts/prepare-release-linux.sh
         
     - name: Upload Linux artifact
       uses: actions/upload-artifact@v4
