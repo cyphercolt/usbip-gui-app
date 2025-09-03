@@ -30,13 +30,17 @@ if ($isAdmin) {
     }
 }
 
-# Change to the script directory
-Set-Location $PSScriptRoot
+# Change to the project root directory (parent of scripts directory)
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$projectRoot = Split-Path -Parent $scriptDir
+Set-Location $projectRoot
+
+Write-Host "📁 Project root: $projectRoot" -ForegroundColor Blue
 
 # Check if virtual environment exists
-if (Test-Path ".venv\Scripts\python.exe") {
+if (Test-Path "venv\Scripts\python.exe") {
     Write-Host "🐍 Using virtual environment" -ForegroundColor Green
-    $pythonPath = ".\.venv\Scripts\python.exe"
+    $pythonPath = ".\venv\Scripts\python.exe"
 } elseif (Get-Command python -ErrorAction SilentlyContinue) {
     Write-Host "🐍 Using system Python" -ForegroundColor Green
     $pythonPath = "python"

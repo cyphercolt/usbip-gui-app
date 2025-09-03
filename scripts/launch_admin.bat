@@ -18,17 +18,21 @@ if %errorLevel% == 0 (
     echo.
     
     :: Request administrator privileges
-    powershell -Command "Start-Process cmd -ArgumentList '/c cd /d %CD% && call %~f0' -Verb runAs"
+    powershell -Command "Start-Process cmd -ArgumentList '/c cd /d %~dp0\.. && call %~f0' -Verb runAs"
     exit /b
 )
 
-:: Change to the script directory
-cd /d "%~dp0"
+:: Get script directory and project root
+set SCRIPT_DIR=%~dp0
+set PROJECT_ROOT=%SCRIPT_DIR%..
+
+:: Change to the project root directory
+cd /d "%PROJECT_ROOT%"
 
 :: Check if virtual environment exists
-if exist ".venv\Scripts\python.exe" (
+if exist "venv\Scripts\python.exe" (
     echo 🐍 Using virtual environment
-    ".venv\Scripts\python.exe" src\main.py
+    "venv\Scripts\python.exe" src\main.py
 ) else (
     echo 🐍 Using system Python
     python src\main.py

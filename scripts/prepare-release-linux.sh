@@ -5,15 +5,23 @@
 
 set -e
 
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
 RELEASE_DIR="USB-IP-GUI-Linux"
 VERSION=$(date +"%Y.%m.%d")
 
 echo "📦 Preparing Linux release package..."
 echo "====================================="
+echo "📁 Project root: $PROJECT_ROOT"
+
+# Change to project root
+cd "$PROJECT_ROOT"
 
 # Check if executable exists
 if [ ! -f "build-configs/dist/USB-IP-GUI" ]; then
-    echo "❌ Executable not found. Run ./build-linux.sh first."
+    echo "❌ Executable not found. Run ./scripts/build-linux.sh first."
     exit 1
 fi
 

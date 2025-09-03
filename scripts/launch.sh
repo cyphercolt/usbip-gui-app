@@ -1,8 +1,11 @@
 #!/bin/bash
 
-# Change to the directory where the script is located
-# dirname "$0" gets the directory of the script file itself
-cd "$(dirname "$0")"
+# Get script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Change to the project root directory
+cd "$PROJECT_ROOT"
 
 # Activate the virtual environment
 source venv/bin/activate
