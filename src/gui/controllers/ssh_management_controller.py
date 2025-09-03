@@ -425,7 +425,9 @@ class SSHManagementController:
                     actual_cmd = RemoteOSDetector.get_remote_usbip_bind_command(
                         self.remote_os_type, busid, self.remote_has_usbipd
                     )
-                    safe_cmd = actual_cmd  # No password hiding needed for Windows usbipd
+                    safe_cmd = (
+                        actual_cmd  # No password hiding needed for Windows usbipd
+                    )
                 else:
                     # Linux/Unix system - use sudo with password
                     sudo_password = password
@@ -439,7 +441,9 @@ class SSHManagementController:
                     actual_cmd = RemoteOSDetector.get_remote_usbip_unbind_command(
                         self.remote_os_type, busid, self.remote_has_usbipd
                     )
-                    safe_cmd = actual_cmd  # No password hiding needed for Windows usbipd
+                    safe_cmd = (
+                        actual_cmd  # No password hiding needed for Windows usbipd
+                    )
                 else:
                     # Linux/Unix system - use sudo with password
                     sudo_password = password
@@ -470,17 +474,25 @@ class SSHManagementController:
                 if bind:
                     # For Windows usbipd bind, check for success indicators
                     success = (
-                        "successfully" in output.lower() or
-                        "shared" in output.lower() or
-                        (not error.strip() and "error" not in output.lower() and "failed" not in output.lower())
+                        "successfully" in output.lower()
+                        or "shared" in output.lower()
+                        or (
+                            not error.strip()
+                            and "error" not in output.lower()
+                            and "failed" not in output.lower()
+                        )
                     )
                 else:
                     # For Windows usbipd unbind, check for success indicators
                     success = (
-                        "successfully" in output.lower() or
-                        "unshared" in output.lower() or
-                        "not shared" in output.lower() or
-                        (not error.strip() and "error" not in output.lower() and "failed" not in output.lower())
+                        "successfully" in output.lower()
+                        or "unshared" in output.lower()
+                        or "not shared" in output.lower()
+                        or (
+                            not error.strip()
+                            and "error" not in output.lower()
+                            and "failed" not in output.lower()
+                        )
                     )
             else:
                 # For Linux, assume success if no error output
@@ -499,7 +511,9 @@ class SSHManagementController:
                 return False
 
         except Exception as e:
-            self.main_window.append_verbose_message(f"Exception in perform_remote_bind: {str(e)}\n")
+            self.main_window.append_verbose_message(
+                f"Exception in perform_remote_bind: {str(e)}\n"
+            )
             return False
 
     def parse_usbipd_list(self, output):
