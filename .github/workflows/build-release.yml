@@ -8,6 +8,10 @@ on:
     types: [published]
   workflow_dispatch:  # Allow manual triggering
 
+permissions:
+  contents: write
+  discussions: write
+
 env:
   PYTHON_VERSION: '3.12'
 
@@ -133,7 +137,7 @@ jobs:
       run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
       
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ steps.tag.outputs.tag }}
         name: USB/IP GUI App ${{ steps.tag.outputs.tag }}
@@ -175,5 +179,4 @@ jobs:
           USB-IP-GUI-Linux.tar.gz
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.GITHUB_TOKEN }}
