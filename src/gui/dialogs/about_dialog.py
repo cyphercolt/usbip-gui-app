@@ -67,7 +67,7 @@ class AboutDialog(QDialog):
 
         # Version and description
         version_label = QLabel(
-            "Version 2.4.0 - Professional USB/IP Management with Enhanced User Experience"
+            "Version 2.4.1 - Professional USB/IP Management with Enhanced User Experience & Colorful Themes"
         )
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
@@ -105,7 +105,7 @@ class AboutDialog(QDialog):
 <li>🔃 <b>Enhanced Auto-Refresh</b> - Preserves settings and device states during updates with proper SSH handling</li>
 <li>🛠️ <b>Fixed Auto-Bind for Windows</b> - Proper OS-specific commands with success validation</li>
 <li>⚙️ <b>Complete Linux Service Support</b> - Enable/disable systemctl commands for usbipd service management</li>
-<li>🎨 <b>Complete Theme System</b> - 4 beautiful themes (System, Light, Dark, OLED) with full persistence</li>
+<li>🎨 <b>Complete Theme System</b> - 13 beautiful themes (System, Light, Dark, OLED, OLED Blue, Blue, Green, Purple, Orange, Red, Teal, Nord, High Contrast) with full persistence</li>
 <li>🔒 <b>Advanced Security</b> - AES-256 encryption with military-grade memory protection</li>
 <li>🖥️ <b>Seamless SSH Integration</b> - Secure remote USB/IP daemon management with proper disconnect handling</li>
 <li>📊 <b>Intelligent Device Mapping</b> - Smart correlation between remote and local devices</li>
@@ -163,7 +163,7 @@ class AboutDialog(QDialog):
 <li><b>USB/IP protocol</b> support for kernel-level USB forwarding</li>
 <li><b>Cross-platform</b> compatible (Linux primary support)</li>
 <li><b>Memory-safe</b> password handling with advanced obfuscation and secure cleanup</li>
-<li><b>Complete Theming</b> - 4 themes with persistent settings and themed dialogs</li>
+<li><b>Complete Theming</b> - 13 themes with persistent settings and themed dialogs</li>
 <li><b>Unified Storage</b> - Consistent encrypted file format with atomic operations</li>
 <li><b>Smart Refresh Logic</b> - UI updates preserve user settings and device states</li>
 <li><b>Robust Error Handling</b> - Comprehensive timeout protection and input validation</li>
@@ -200,7 +200,7 @@ class AboutDialog(QDialog):
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
 <li>🎯 <b>Production Ready:</b> Comprehensive error handling and intelligent state management</li>
 <li>🔐 <b>Security First:</b> Military-grade encryption and secure password handling</li>
-<li>🎨 <b>Beautiful UI:</b> 4 stunning themes with complete theming system</li>
+<li>🎨 <b>Beautiful UI:</b> 13 stunning themes with complete theming system</li>
 <li>🔧 <b>Robust Architecture:</b> Enhanced Qt signal handling and unified storage system</li>
 <li>📱 <b>User Friendly:</b> Intuitive interface with comprehensive help and smart refresh</li>
 <li>🛡️ <b>Reliability Focused:</b> Signal blocking and state preservation for stable operation</li>

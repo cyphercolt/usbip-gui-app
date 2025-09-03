@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QScrollArea,
     QWidget,
+    QPushButton,
+    QMessageBox,
 )
 from PyQt6.QtCore import Qt
 from styling.themes import ThemeManager
@@ -177,12 +179,25 @@ class SettingsDialog(QDialog):
         self.theme_input = QComboBox()
         self.theme_input.addItems(ThemeManager.get_available_themes())
         self.theme_input.setCurrentText(self.initial_settings["theme_setting"])
-        theme_layout.addRow("Theme:", self.theme_input)
+        
+        # Add preview button next to theme combo
+        theme_row_widget = QWidget()
+        theme_row_layout = QHBoxLayout(theme_row_widget)
+        theme_row_layout.setContentsMargins(0, 0, 0, 0)
+        theme_row_layout.addWidget(self.theme_input)
+        
+        # Theme preview button
+        self.theme_preview_button = QPushButton("Preview")
+        self.theme_preview_button.setToolTip("Preview the selected theme")
+        self.theme_preview_button.clicked.connect(self.preview_theme)
+        theme_row_layout.addWidget(self.theme_preview_button)
+        
+        theme_layout.addRow("Theme:", theme_row_widget)
 
         # Theme info label
         theme_info_label = QLabel(
             "Choose your preferred theme. System Theme follows your OS settings, "
-            "while other options force specific themes."
+            "while other options force specific themes. Use Preview to see how themes look."
         )
         theme_info_label.setWordWrap(True)
         theme_info_label.setStyleSheet(
@@ -421,6 +436,63 @@ class SettingsDialog(QDialog):
             }}
         """
         )
+
+    def preview_theme(self):
+        """Show a preview of the selected theme."""
+        selected_theme = self.theme_input.currentText()
+        
+        # Get theme manager and colors for the selected theme
+        theme_manager = ThemeManager()
+        theme_colors = theme_manager.get_dialog_colors(selected_theme)
+        
+        # Create theme preview message
+        preview_msg = QMessageBox(self)
+        preview_msg.setWindowTitle(f"Theme Preview: {selected_theme}")
+        
+        # Set preview content based on theme
+        preview_content = f"""
+        <h3 style="color: {theme_colors['header_color']};">🎨 {selected_theme} Preview</h3>
+        <p style="color: {theme_colors['text_color']};">
+        This is how the <b>{selected_theme}</b> theme looks:
+        </p>
+        <ul style="color: {theme_colors['text_color']};">
+        <li><span style="color: {theme_colors['header_color']};">Headers</span> use this color</li>
+        <li><span style="color: {theme_colors['text_color']};">Regular text</span> appears like this</li>
+        <li><span style="color: {theme_colors['version_color']};">Secondary text</span> is shown in this shade</li>
+        </ul>
+        <div style="background-color: {theme_colors['tip_bg_color']}; 
+                    border: 1px solid {theme_colors['tip_border_color']}; 
+                    padding: 10px; margin: 10px 0; border-radius: 5px;">
+        <b style="color: {theme_colors['header_color']};">💡 Tip:</b> 
+        <span style="color: {theme_colors['text_color']};">
+        This is how informational boxes will appear with this theme.
+        </span>
+        </div>
+        """
+        
+        preview_msg.setText(preview_content)
+        preview_msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        
+        # Apply theme colors to the message box
+        preview_msg.setStyleSheet(f"""
+            QMessageBox {{
+                background-color: {theme_colors['bg_color']};
+                color: {theme_colors['text_color']};
+            }}
+            QMessageBox QPushButton {{
+                background-color: {theme_colors['header_color']};
+                color: {theme_colors['bg_color']};
+                border: 1px solid {theme_colors['border_color']};
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }}
+            QMessageBox QPushButton:hover {{
+                background-color: {theme_colors['tip_border_color']};
+            }}
+        """)
+        
+        preview_msg.exec()
 
     def refresh_dialog_theme(self):
         """Refresh the dialog's theme colors and re-apply styling."""
