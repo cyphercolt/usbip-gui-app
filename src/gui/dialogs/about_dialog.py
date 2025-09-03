@@ -59,7 +59,7 @@ class AboutDialog(QDialog):
         layout.addWidget(title_label)
 
         # Version and description
-        version_label = QLabel("Version 2.2.1 - Advanced USB/IP Management Tool with Cross-Platform Service Management")
+        version_label = QLabel("Version 2.2.2 - Advanced USB/IP Management Tool with Cross-Platform Service Management")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(f"font-size: 12px; color: {version_color}; margin-bottom: 15px;")
         layout.addWidget(version_label)
