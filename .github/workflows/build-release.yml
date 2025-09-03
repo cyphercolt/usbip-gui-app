@@ -61,7 +61,7 @@ jobs:
         powershell Compress-Archive -Path USB-IP-GUI-Windows\* -DestinationPath USB-IP-GUI-Windows.zip
         
     - name: Upload Windows artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: USB-IP-GUI-Windows
         path: USB-IP-GUI-Windows.zip
@@ -104,7 +104,7 @@ jobs:
         ./prepare-release-linux.sh
         
     - name: Upload Linux artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: USB-IP-GUI-Linux
         path: USB-IP-GUI-Linux.tar.gz
@@ -119,12 +119,12 @@ jobs:
       uses: actions/checkout@v4
       
     - name: Download Windows artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: USB-IP-GUI-Windows
         
     - name: Download Linux artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: USB-IP-GUI-Linux
         

@@ -61,7 +61,7 @@ jobs:
         
     - name: Upload Windows artifact
       if: ${{ inputs.create_artifacts }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: USB-IP-GUI-Windows-Manual
         path: USB-IP-GUI-Windows-Manual.zip
@@ -109,7 +109,7 @@ jobs:
         
     - name: Upload Linux artifact
       if: ${{ inputs.create_artifacts }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: USB-IP-GUI-Linux-Manual
         path: USB-IP-GUI-Linux-Manual.tar.gz
