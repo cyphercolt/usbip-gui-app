@@ -1,0 +1,179 @@
+name: Build and Release USB/IP GUI App
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags like v1.0.0, v2.1.3, etc.
+  release:
+    types: [published]
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Create virtual environment
+      run: |
+        python -m venv venv
+        
+    - name: Install dependencies
+      run: |
+        .\venv\Scripts\activate
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Build Windows executable
+      run: |
+        .\venv\Scripts\activate
+        pyinstaller USB-IP-GUI.spec --clean
+        
+    - name: Create Windows release package
+      run: |
+        mkdir USB-IP-GUI-Windows
+        copy dist\USB-IP-GUI.exe USB-IP-GUI-Windows\
+        copy README.md USB-IP-GUI-Windows\
+        copy LICENSE USB-IP-GUI-Windows\
+        echo # USB/IP GUI App for Windows > USB-IP-GUI-Windows\INSTALL.md
+        echo. >> USB-IP-GUI-Windows\INSTALL.md
+        echo ## Prerequisites >> USB-IP-GUI-Windows\INSTALL.md
+        echo 1. Install USB/IP client from: https://github.com/vadimgrn/usbip-win2 >> USB-IP-GUI-Windows\INSTALL.md
+        echo 2. Or install usbipd-win from: https://github.com/dorssel/usbipd-win >> USB-IP-GUI-Windows\INSTALL.md
+        echo. >> USB-IP-GUI-Windows\INSTALL.md
+        echo ## Usage >> USB-IP-GUI-Windows\INSTALL.md
+        echo 1. Extract this package >> USB-IP-GUI-Windows\INSTALL.md
+        echo 2. Run USB-IP-GUI.exe >> USB-IP-GUI-Windows\INSTALL.md
+        echo 3. The app will guide you through setup >> USB-IP-GUI-Windows\INSTALL.md
+        
+    - name: Create Windows archive
+      run: |
+        powershell Compress-Archive -Path USB-IP-GUI-Windows\* -DestinationPath USB-IP-GUI-Windows.zip
+        
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: USB-IP-GUI-Windows
+        path: USB-IP-GUI-Windows.zip
+        
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-dev python3-venv
+        
+    - name: Create virtual environment
+      run: |
+        python3 -m venv venv
+        
+    - name: Install dependencies
+      run: |
+        source venv/bin/activate
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Build Linux executable
+      run: |
+        source venv/bin/activate
+        pyinstaller USB-IP-GUI-linux.spec --clean
+        
+    - name: Create Linux release package
+      run: |
+        chmod +x prepare-release-linux.sh
+        ./prepare-release-linux.sh
+        
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: USB-IP-GUI-Linux
+        path: USB-IP-GUI-Linux.tar.gz
+        
+  create-release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download Windows artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: USB-IP-GUI-Windows
+        
+    - name: Download Linux artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: USB-IP-GUI-Linux
+        
+    - name: Get tag name
+      id: tag
+      run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.tag.outputs.tag }}
+        name: USB/IP GUI App ${{ steps.tag.outputs.tag }}
+        body: |
+          ## USB/IP GUI App Release ${{ steps.tag.outputs.tag }}
+          
+          Cross-platform USB/IP device management application with GUI.
+          
+          ### Downloads
+          - **Windows**: USB-IP-GUI-Windows.zip
+          - **Linux**: USB-IP-GUI-Linux.tar.gz
+          
+          ### Features
+          - ✅ Cross-platform USB/IP device management
+          - ✅ Secure SSH connection handling
+          - ✅ Auto-reconnection capabilities
+          - ✅ Real-time device state monitoring
+          - ✅ Windows usbipd-win and Linux usbip support
+          
+          ### Installation
+          **Windows:**
+          1. Download and extract USB-IP-GUI-Windows.zip
+          2. Install USB/IP client (see INSTALL.md in package)
+          3. Run USB-IP-GUI.exe
+          
+          **Linux:**
+          1. Download USB-IP-GUI-Linux.tar.gz
+          2. Extract: `tar -xzf USB-IP-GUI-Linux.tar.gz`
+          3. Install usbip: `sudo apt install usbip` (Ubuntu/Debian)
+          4. Run: `cd USB-IP-GUI-Linux && ./run-usbip-gui.sh`
+          
+          ### Requirements
+          - **Windows**: USB/IP client or usbipd-win
+          - **Linux**: usbip package (available in most distributions)
+          - Network access to USB/IP server
+          
+        files: |
+          USB-IP-GUI-Windows.zip
+          USB-IP-GUI-Linux.tar.gz
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
