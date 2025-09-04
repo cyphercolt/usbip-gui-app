@@ -683,8 +683,10 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            # Use platform-specific ping command with shorter timeout for auto-ping
+            ping_cmd = get_platform_ping_command(ip, count=1, timeout=3)
             result = subprocess.run(
-                ["ping", "-c", "1", "-W", "3", ip],  # Shorter timeout for auto-ping
+                ping_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
