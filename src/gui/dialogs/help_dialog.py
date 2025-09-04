@@ -125,11 +125,10 @@ class HelpDialog(QDialog):
 <h3 style="color: {header_color}; margin-top: 20px;">🐧 Linux USB/IP Service Management:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
 <li><b>🔄 Real-time Status:</b> Live daemon monitoring with intelligent status detection</li>
-<li><b>🚀 Start/Stop Daemon:</b> Secure control of USB/IP daemon with proper authentication</li>
+<li><b>🚀 Start/Stop Daemon:</b> Control of USB/IP daemon</li>
 <li><b>🔧 Kernel Modules:</b> Load/unload USB/IP kernel modules (usbip_host, usbip_core)</li>
 <li><b>🤖 Auto-start Control:</b> Enable/disable daemon auto-start on boot</li>
 <li><b>📊 Installation Check:</b> Verify USB/IP tools and display version information</li>
-<li><b>🛡️ Secure Operations:</b> All commands use validated sudo with proper authentication</li>
 <li><b>⚡ Smart Detection:</b> Prioritizes actual daemon listening state over systemctl transitions</li>
 </ul>
 
@@ -190,12 +189,10 @@ class HelpDialog(QDialog):
 
 <h3 style="color: {header_color}; margin-top: 20px;">⚙️ Advanced Features:</h3>
 <ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li><b>Enhanced Security:</b> AES-256 encryption with all settings and device mappings securely stored</li>
 <li><b>Smart Grace Period:</b> Auto-reconnect intelligently pauses after bulk operations</li>
 <li><b>Real-time Console:</b> Comprehensive feedback on all operations and status updates</li>
 <li><b>Robust State Management:</b> Device states and settings survive application restarts and theme changes</li>
 <li><b>Signal Protection:</b> Enhanced Qt handling prevents unwanted operations during refresh</li>
-<li><b>Unified Storage:</b> Consistent encrypted file format ensures reliable data handling</li>
 </ul>
 
 <h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Improvements:</h3>

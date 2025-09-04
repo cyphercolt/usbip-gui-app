@@ -67,7 +67,7 @@ class AboutDialog(QDialog):
 
         # Version and description
         version_label = QLabel(
-            "Version 2.4.1 - Professional USB/IP Management with Enhanced User Experience & Colorful Themes"
+            "Version 2.4.2 - USB/IP Management with Enhanced User Experience & Colorful Themes"
         )
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
@@ -106,8 +106,7 @@ class AboutDialog(QDialog):
 <li>🛠️ <b>Fixed Auto-Bind for Windows</b> - Proper OS-specific commands with success validation</li>
 <li>⚙️ <b>Complete Linux Service Support</b> - Enable/disable systemctl commands for usbipd service management</li>
 <li>🎨 <b>Complete Theme System</b> - 13 beautiful themes (System, Light, Dark, OLED, OLED Blue, Blue, Green, Purple, Orange, Red, Teal, Nord, High Contrast) with full persistence</li>
-<li>🔒 <b>Advanced Security</b> - AES-256 encryption with military-grade memory protection</li>
-<li>🖥️ <b>Seamless SSH Integration</b> - Secure remote USB/IP daemon management with proper disconnect handling</li>
+<li>🖥️ <b>Seamless SSH Integration</b> - Remote USB/IP daemon management with proper disconnect handling</li>
 <li>📊 <b>Intelligent Device Mapping</b> - Smart correlation between remote and local devices</li>
 <li>⚙️ <b>Comprehensive Settings</b> - Customizable intervals, grace periods, and theming with persistence</li>
 <li>🎯 <b>Per-Device Control</b> - Individual auto-reconnect settings with visual indicators</li>
@@ -115,100 +114,14 @@ class AboutDialog(QDialog):
 <li>🛡️ <b>Enhanced Reliability</b> - Qt signal blocking prevents unwanted operations</li>
 <li>🐧 <b>Linux Service Management</b> - Comprehensive USB/IP daemon control with real-time status</li>
 <li>🔧 <b>Cross-Platform Service Support</b> - Windows usbipd and Linux usbipd management</li>
-<li>🏗️ <b>Professional CI/CD Pipeline</b> - Automated builds, testing, and releases for both platforms</li>
-<li>🌟 <b>Enterprise Development Workflow</b> - Git Flow branching with comprehensive documentation</li>
+<li>🏗️ <b>CI/CD Pipeline</b> - Automated builds, testing, and releases for both platforms</li>
 </ul>
 
-<h3 style="color: {header_color}; margin-top: 20px;">🏗️ Development & CI/CD Excellence:</h3>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🤖 <b>Automated GitHub Actions</b> - Complete CI/CD pipeline with build testing and releases</li>
-<li>🔧 <b>Cross-Platform Builds</b> - Automated Windows (.exe) and Linux executable generation</li>
-<li>✅ <b>Code Quality Enforcement</b> - Black formatting and Flake8 linting in every commit</li>
-<li>🌿 <b>Git Flow Workflow</b> - Professional branching strategy with feature/develop/main branches</li>
-<li>📦 <b>PyInstaller Integration</b> - Optimized build configurations for 65MB Linux and ~30MB Windows executables</li>
-<li>📋 <b>Comprehensive Documentation</b> - Developer guides, workflow instructions, and setup documentation</li>
-<li>🚀 <b>Automated Releases</b> - Tagged releases trigger automatic binary builds and GitHub releases</li>
-<li>🧪 <b>Testing Pipeline</b> - Automated build verification on all platforms before merge</li>
-<li>📁 <b>Organized Project Structure</b> - Professional organization with docs/, scripts/, and build-configs/ folders</li>
-<li>🔄 <b>Hot-Reloadable Scripts</b> - Development scripts that work from any directory with proper path resolution</li>
-</ul>
 
-<h3 style="color: {header_color}; margin-top: 20px;">🐧 Linux Service Management Features:</h3>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🔄 <b>Real-time Service Status</b> - Live monitoring of USB/IP daemon state with chronological log analysis</li>
-<li>⚡ <b>Smart Status Detection</b> - Prioritizes actual listening ports over systemctl transitional states</li>
-<li>🚀 <b>Start/Stop Daemon Control</b> - Secure systemctl operations with proper authentication</li>
-<li>🔧 <b>Kernel Module Management</b> - Load/unload USB/IP modules (usbip_host, usbip_core, vhci_hcd)</li>
-<li>🤖 <b>Auto-start Configuration</b> - Enable/disable daemon auto-start on boot</li>
-<li>🛡️ <b>Secure Command Execution</b> - All operations use validated sudo commands with proper escaping</li>
-<li>📊 <b>Installation Verification</b> - Checks USB/IP tools availability and version information</li>
-<li>🔄 <b>Intelligent Status Refresh</b> - Chronological analysis prevents false status reports</li>
-</ul>
 
-<h3 style="color: {header_color}; margin-top: 20px;">🎮 Gaming & Performance Features:</h3>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🏓 <b>Real-time Ping Monitoring</b> - Live latency display with automatic color coding</li>
-<li>🟢 <b>Gaming Latency Indicators</b> - Green (≤50ms), Yellow (100-150ms), Red (>300ms) for optimal gaming</li>
-<li>�️ <b>Safe IP Management</b> - Dedicated dialog prevents connection hangs on bad IPs</li>
-<li>⏱️ <b>Timeout Protection</b> - 15-second timeouts prevent hanging on unresponsive servers</li>
-<li>💬 <b>Dual Console Modes</b> - Verbose for detailed output, simple for clean user experience</li>
-<li>🔍 <b>Debug Mode</b> - Hidden developer tools for troubleshooting and advanced configuration</li>
-<li>📝 <b>Smart Device Messaging</b> - User-friendly device names instead of technical bus IDs</li>
-</ul>
-
-<h3 style="color: {header_color}; margin-top: 20px;">�🛠️ Technical Excellence:</h3>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>Built with <b>PyQt6</b> for modern, responsive UI with enhanced signal handling</li>
-<li><b>AES-256</b> encryption with dynamic salt generation for secure data storage</li>
-<li><b>USB/IP protocol</b> support for kernel-level USB forwarding</li>
-<li><b>Cross-platform</b> compatible (Linux primary support)</li>
-<li><b>Memory-safe</b> password handling with advanced obfuscation and secure cleanup</li>
-<li><b>Complete Theming</b> - 13 themes with persistent settings and themed dialogs</li>
-<li><b>Unified Storage</b> - Consistent encrypted file format with atomic operations</li>
-<li><b>Smart Refresh Logic</b> - UI updates preserve user settings and device states</li>
-<li><b>Robust Error Handling</b> - Comprehensive timeout protection and input validation</li>
-</ul>
-
-<h3 style="color: {header_color}; margin-top: 20px;">🔧 Recent Major Improvements:</h3>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>✅ <b>Linux USB/IP Service Management</b> - Complete daemon control with real-time status monitoring</li>
-<li>✅ <b>Intelligent Status Detection</b> - Chronological log analysis and listening port prioritization</li>
-<li>✅ <b>Cross-Platform Service Support</b> - Unified interface for Windows and Linux USB/IP services</li>
-<li>✅ <b>Enhanced Device Operation Reliability</b> - Fixed port mapping for detach operations</li>
-<li>✅ <b>Optimized Performance</b> - Reduced Windows USB subsystem delays for faster operations</li>
-<li>✅ <b>Auto-refresh After Operations</b> - Device lists automatically update after attach/detach</li>
-<li>✅ <b>Gaming-Focused Ping System</b> - Real-time latency monitoring with color-coded performance indicators</li>
-<li>✅ <b>Enhanced Console System</b> - Verbose mode for debugging, simple mode for clean output</li>
-<li>✅ <b>Safe IP Management</b> - Prevents app hangs with dedicated IP management dialog</li>
-<li>✅ <b>Timeout Protection</b> - Universal 15-second timeouts prevent hanging on bad connections</li>
-<li>✅ <b>Debug Mode System</b> - Hidden developer tools accessible through settings</li>
-<li>✅ <b>Smart Device Messages</b> - User-friendly device names improve readability</li>
-<li>✅ <b>Signal Blocking</b> - Fixed auto-refresh causing unwanted device operations</li>
-<li>✅ <b>State Persistence</b> - All settings survive UI updates and theme changes</li>
-</ul>
-
-<h3 style="color: {header_color}; margin-top: 20px;">🔗 Source Code & Updates:</h3>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li><b>GitHub Repository:</b> <a href="https://github.com/cyphercolt/usbip-gui-app" style="color: {link_color}; text-decoration: none;">github.com/cyphercolt/usbip-gui-app</a></li>
-<li>🐛 <b>Report Issues:</b> Submit bug reports and feature requests</li>
-<li>🔄 <b>Latest Updates:</b> Check for new releases and improvements</li>
-<li>📖 <b>Documentation:</b> Setup guides and usage instructions</li>
-<li>⭐ <b>Star the Project:</b> Show your support for continued development</li>
-</ul>
-
-<h3 style="color: {header_color}; margin-top: 20px;">🏆 Project Highlights:</h3>
-<ul style="margin-left: 20px; line-height: 1.6; color: {text_color};">
-<li>🎯 <b>Production Ready:</b> Comprehensive error handling and intelligent state management</li>
-<li>🔐 <b>Security First:</b> Military-grade encryption and secure password handling</li>
-<li>🎨 <b>Beautiful UI:</b> 13 stunning themes with complete theming system</li>
-<li>🔧 <b>Robust Architecture:</b> Enhanced Qt signal handling and unified storage system</li>
-<li>📱 <b>User Friendly:</b> Intuitive interface with comprehensive help and smart refresh</li>
-<li>🛡️ <b>Reliability Focused:</b> Signal blocking and state preservation for stable operation</li>
-</ul>
 
 <div style="margin-top: 30px; padding: 15px; text-align: center; border-top: 2px solid {header_color}; color: {text_color};">
 <p style="margin: 5px 0; font-style: italic;">🚀 {current_year} - Enhanced USB/IP Management Solution</p>
-<p style="margin: 5px 0; font-size: 11px; color: {version_color};">Enterprise-grade reliability with comprehensive fixes and improvements</p>
 <p style="margin: 5px 0; font-size: 10px; color: {version_color};">Free and open source software - Continuously improved with user feedback</p>
 </div>
         """
