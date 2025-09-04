@@ -1,17 +1,16 @@
 # 🖥️ USBIP GUI Application
 
-A **secure**, cross-platform desktop GUI for managing USBIP devices locally and remotely via SSH. Perfect for gaming setups, home labs, and remote USB device management. Runs on **Linux** and **Windows**.
+A cross-platform desktop GUI for managing USBIP devices locally and remotely via SSH. Perfect for gaming setups, home labs, and remote USB device management. Runs on **Linux** and **Windows**.
 
 **Note**: Fully coded with GitHub Copilot. I needed a USB-over-IP app tailored to my needs, and I'm not a coder, so here we are!
 
 ## ✨ Features
 
 - 🔌 **Device Management** - Attach/detach USB devices with auto-reconnect
-- 🔒 **Military-Grade Security** - AES-256 encryption, memory protection  
 - 🎨 **Modern UI** - 4 themes with complete persistence
 - 🎮 **Gaming Optimized** - Real-time ping monitoring
 - 🚀 **Smart Automation** - Auto-reconnect, bulk operations
-- 🛡️ **SSH Integration** - Secure remote device management
+- 🛡️ **SSH Integration** - Remote device management
 
 ## 📸 Screenshots
 <img width="402" height="230" alt="image" src="https://github.com/user-attachments/assets/d1a8f619-e839-4258-ab44-a5de04e2ea1f" /> <img width="249" height="181" alt="image" src="https://github.com/user-attachments/assets/dab0290b-6e21-4e83-a4ed-0a5b631b574b" />
@@ -61,13 +60,6 @@ python src/main.py
 - Home lab USB management
 - Remote workstation peripherals
 
-## 🔒 Security
-
-- AES-256 encryption with machine-specific keys
-- Memory protection with automatic cleanup
-- Rate limiting and brute force protection
-- No plaintext credential storage
-
 ## 🔧 Troubleshooting
 
 ### Linux
@@ -90,7 +82,7 @@ Restart-Service usbipd
 
 ## 🤝 Contributing
 
-Contributions welcome! Maintain security standards and Qt patterns.
+Contributions welcome!
 
 ## 📜 License
 
@@ -98,4 +90,4 @@ MIT License - See LICENSE file for details.
 
 ---
 
-**⭐ 7,729 lines of secure Python code built with AI**
+**⭐ 7,729 lines of Python code built with AI**
