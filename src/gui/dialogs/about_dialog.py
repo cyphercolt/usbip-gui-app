@@ -67,7 +67,7 @@ class AboutDialog(QDialog):
 
         # Version and description
         version_label = QLabel(
-            "Version 2.4.2 - USB/IP Management with Enhanced User Experience & Colorful Themes"
+            "Version 2.4.3 - USB/IP Management with Enhanced User Experience & Colorful Themes"
         )
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet(
