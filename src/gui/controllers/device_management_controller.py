@@ -75,8 +75,8 @@ class DeviceManagementController(QObject):
             self.main_window.append_simple_message("❌ No IP selected for Attach All")
             return
 
-        attached_count = 0
-        failed_count = 0
+        # Collect all devices to attach before starting to avoid table modification during iteration
+        devices_to_attach = []
         for row in range(self.main_window.device_table.rowCount()):
             toggle_btn = self.main_window.device_table.cellWidget(row, 2)
             busid_item = self.main_window.device_table.item(row, 0)
@@ -85,14 +85,29 @@ class DeviceManagementController(QObject):
                 # Only attach if not checked
                 busid = busid_item.text().strip()  # Strip whitespace
                 desc = desc_item.text()
-                # Actually perform the attachment
-                success = self.toggle_attach(
-                    ip, busid, desc, 2, start_grace_period=False
-                )  # 2 = checked/attached state
-                if success:
-                    attached_count += 1
-                else:
-                    failed_count += 1
+                devices_to_attach.append((busid, desc))
+
+        if not devices_to_attach:
+            self.main_window.append_simple_message("ℹ️ No devices available to attach")
+            return
+
+        self.main_window.append_simple_message(
+            f"🔄 Attaching {len(devices_to_attach)} devices..."
+        )
+
+        attached_count = 0
+        failed_count = 0
+
+        # Process each device without allowing table refreshes during the operation
+        for busid, desc in devices_to_attach:
+            # Actually perform the attachment
+            success = self.toggle_attach(
+                ip, busid, desc, 2, start_grace_period=False, refresh_table=False
+            )  # 2 = checked/attached state
+            if success:
+                attached_count += 1
+            else:
+                failed_count += 1
 
         # Provide detailed feedback
         if attached_count > 0:
@@ -108,7 +123,7 @@ class DeviceManagementController(QObject):
             # Add a small delay to allow usbip commands to complete
             time.sleep(0.5)
 
-        # Refresh the device table to show updated states
+        # Refresh the device table to show updated states (only once at the end)
         self.load_devices()
 
         # Start grace period to prevent immediate auto-reconnect after attach all
@@ -117,8 +132,8 @@ class DeviceManagementController(QObject):
 
     def detach_all_devices(self):
         """Detach all attached devices."""
-        detached_count = 0
-        failed_count = 0
+        # Collect all devices to detach before starting to avoid table modification during iteration
+        devices_to_detach = []
         for row in range(self.main_window.device_table.rowCount()):
             toggle_btn = self.main_window.device_table.cellWidget(row, 2)
             busid_item = self.main_window.device_table.item(row, 0)
@@ -127,14 +142,29 @@ class DeviceManagementController(QObject):
                 # Only detach if checked
                 busid = busid_item.text().strip()  # Strip whitespace
                 desc = desc_item.text()
-                # Actually perform the detachment
-                success = self.toggle_attach(
-                    "", busid, desc, 0, start_grace_period=False
-                )  # 0 = unchecked/detached state
-                if success:
-                    detached_count += 1
-                else:
-                    failed_count += 1
+                devices_to_detach.append((busid, desc))
+
+        if not devices_to_detach:
+            self.main_window.append_simple_message("ℹ️ No devices available to detach")
+            return
+
+        self.main_window.append_simple_message(
+            f"🔄 Detaching {len(devices_to_detach)} devices..."
+        )
+
+        detached_count = 0
+        failed_count = 0
+
+        # Process each device without allowing table refreshes during the operation
+        for busid, desc in devices_to_detach:
+            # Actually perform the detachment
+            success = self.toggle_attach(
+                "", busid, desc, 0, start_grace_period=False, refresh_table=False
+            )  # 0 = unchecked/detached state
+            if success:
+                detached_count += 1
+            else:
+                failed_count += 1
 
         # Provide detailed feedback
         if detached_count > 0:
@@ -150,7 +180,7 @@ class DeviceManagementController(QObject):
             # Add a small delay to allow usbip commands to complete
             time.sleep(0.5)
 
-        # Refresh the device table to show updated states
+        # Refresh the device table to show updated states (only once at the end)
         self.load_devices()
 
         # Start grace period to prevent immediate auto-reconnect
@@ -942,7 +972,9 @@ class DeviceManagementController(QObject):
                     "Detach command failed or returned no output.\n"
                 )
 
-    def toggle_attach(self, ip, busid, desc, state, start_grace_period=True):
+    def toggle_attach(
+        self, ip, busid, desc, state, start_grace_period=True, refresh_table=True
+    ):
         """Toggle device attach/detach state.
 
         Args:
@@ -951,6 +983,7 @@ class DeviceManagementController(QObject):
             desc: Device description
             state: 0 for detach, 2 for attach
             start_grace_period: Whether to start grace period after operation (default True)
+            refresh_table: Whether to refresh the device table after operation (default True)
         """
         # Clean up any whitespace from busid
         busid = busid.strip()
@@ -1183,7 +1216,9 @@ class DeviceManagementController(QObject):
             # Add a small delay before refreshing to ensure mapping is properly saved
             time.sleep(1.0)
 
-            self.load_devices()  # Refresh device list after successful attach
+            # Only refresh table if not in bulk operation mode
+            if refresh_table:
+                self.load_devices()  # Refresh device list after successful attach
             if start_grace_period:
                 self.main_window.start_grace_period()  # Prevent auto-refresh interference
 
@@ -1275,7 +1310,9 @@ class DeviceManagementController(QObject):
                 self.main_window.append_simple_message(
                     f"✅ Device '{desc}' detached successfully"
                 )
-                self.load_devices()  # Initial refresh after successful detach
+                # Only refresh table if not in bulk operation mode
+                if refresh_table:
+                    self.load_devices()  # Initial refresh after successful detach
                 if start_grace_period:
                     self.main_window.start_grace_period()  # Prevent auto-refresh interference
 
@@ -1283,7 +1320,8 @@ class DeviceManagementController(QObject):
                 time.sleep(1.0)  # Just 1 second for USB state to update
 
                 # Final refresh to ensure device appears in local list
-                self.load_devices()
+                if refresh_table:
+                    self.load_devices()
 
                 # Re-enable all buttons after successful detach
                 self.main_window.enable_all_device_buttons()

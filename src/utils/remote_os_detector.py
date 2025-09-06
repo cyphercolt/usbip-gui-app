@@ -154,7 +154,9 @@ class RemoteOSDetector:
             return "usbipd list"
         else:
             # Linux, macOS, or Windows without usbipd
-            return "usbip list -l"
+            # Use PATH expansion and full path search to handle cases where usbip
+            # is not in the default SSH PATH (common on Raspberry Pi/Linux systems)
+            return "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; which usbip >/dev/null 2>&1 && usbip list -l || echo 'usbip: command not found'"
 
     @staticmethod
     def get_remote_usbip_bind_command(
