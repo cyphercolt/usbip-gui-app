@@ -114,7 +114,12 @@ class SecureCommandBuilder:
         # For local execution, only use sudo on non-Windows platforms
         if remote_execution or platform.system() != "Windows":
             safe_password = SecurityValidator.sanitize_for_shell(password)
-            return f"echo {safe_password} | sudo -S usbip bind -b {safe_busid}"
+            # Include PATH expansion for remote execution to handle cases where usbip
+            # is not in the default SSH PATH (common on Raspberry Pi/Linux systems)
+            if remote_execution:
+                return f"PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; echo {safe_password} | sudo -S usbip bind -b {safe_busid}"
+            else:
+                return f"echo {safe_password} | sudo -S usbip bind -b {safe_busid}"
         else:
             # Local Windows execution - no sudo needed
             return f"usbip bind -b {safe_busid}"
@@ -141,7 +146,12 @@ class SecureCommandBuilder:
         # For local execution, only use sudo on non-Windows platforms
         if remote_execution or platform.system() != "Windows":
             safe_password = SecurityValidator.sanitize_for_shell(password)
-            return f"echo {safe_password} | sudo -S usbip unbind -b {safe_busid}"
+            # Include PATH expansion for remote execution to handle cases where usbip
+            # is not in the default SSH PATH (common on Raspberry Pi/Linux systems)
+            if remote_execution:
+                return f"PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; echo {safe_password} | sudo -S usbip unbind -b {safe_busid}"
+            else:
+                return f"echo {safe_password} | sudo -S usbip unbind -b {safe_busid}"
         else:
             # Local Windows execution - no sudo needed
             return f"usbip unbind -b {safe_busid}"

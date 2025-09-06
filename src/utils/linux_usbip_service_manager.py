@@ -112,7 +112,8 @@ class LinuxUSBIPServiceManager:
             enabled_status = "disabled"
             for service_name in ["usbipd", "usbip", "usbip-daemon"]:
                 stdin, stdout, stderr = ssh_client.exec_command(
-                    f"systemctl is-enabled {service_name} 2>/dev/null || echo 'disabled'"
+                    f"systemctl is-enabled {service_name} 2>/dev/null || echo 'disabled'",
+                    timeout=10,
                 )
                 status = stdout.read().decode().strip()
                 if status == "enabled":
@@ -128,7 +129,7 @@ class LinuxUSBIPServiceManager:
 
             # Check kernel modules (REQUIRED for attaching devices)
             stdin, stdout, stderr = ssh_client.exec_command(
-                "lsmod | grep -E 'usbip_host|usbip_core'"
+                "lsmod | grep -E 'usbip_host|usbip_core'", timeout=10
             )
             modules_output = stdout.read().decode().strip()
 
@@ -143,13 +144,64 @@ class LinuxUSBIPServiceManager:
                 )
 
             # Check usbip command availability (REQUIRED for attaching devices)
-            stdin, stdout, stderr = ssh_client.exec_command("which usbip")
-            usbip_path = stdout.read().decode().strip()
-            if usbip_path:
-                status_parts.append(f"🟢 usbip command: AVAILABLE ({usbip_path})")
+            # Try multiple ways to check for usbip and usbipd commands
+            # Include PATH expansion to handle cases where commands are not in SSH PATH
+            commands_to_check = [
+                (
+                    "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; which usbip",
+                    "usbip",
+                ),
+                (
+                    "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; sudo usbip version 2>/dev/null",
+                    "usbip",
+                ),
+                (
+                    "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; usbip version 2>/dev/null",
+                    "usbip",
+                ),
+                (
+                    "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; which usbipd",
+                    "usbipd",
+                ),
+                (
+                    "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; sudo usbipd --version 2>/dev/null",
+                    "usbipd",
+                ),
+                (
+                    "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; usbipd --version 2>/dev/null",
+                    "usbipd",
+                ),
+            ]
+
+            usbip_available = False
+            usbipd_available = False
+            command_paths = []
+
+            for cmd, tool_type in commands_to_check:
+                stdin, stdout, stderr = ssh_client.exec_command(cmd, timeout=10)
+                output = stdout.read().decode().strip()
+                error = stderr.read().decode().strip()
+
+                if output and not error:
+                    if tool_type == "usbip" and not usbip_available:
+                        usbip_available = True
+                        if cmd.startswith("which"):
+                            command_paths.append(f"usbip ({output})")
+                        else:
+                            command_paths.append(f"usbip (working)")
+                    elif tool_type == "usbipd" and not usbipd_available:
+                        usbipd_available = True
+                        if cmd.startswith("which"):
+                            command_paths.append(f"usbipd ({output})")
+                        else:
+                            command_paths.append(f"usbipd (working)")
+
+            if usbip_available or usbipd_available:
+                tools_found = ", ".join(command_paths)
+                status_parts.append(f"🟢 USB/IP commands: AVAILABLE ({tools_found})")
                 command_available = True
             else:
-                status_parts.append("🔴 usbip command: NOT FOUND")
+                status_parts.append("🔴 USB/IP commands: NOT FOUND")
 
             # System is ready for USB/IP operations if modules and command are available
             # Daemon is only needed for sharing devices TO others
@@ -169,25 +221,52 @@ class LinuxUSBIPServiceManager:
         try:
             operations = []
 
-            # Load kernel modules first using secure command builder
-            modprobe_cmd = SecureCommandBuilder.build_modprobe_command(
-                "usbip_host usbip_core", password, remote_execution=True
+            # Check if kernel modules are already loaded before attempting to load them
+            stdin, stdout, stderr = ssh_client.exec_command(
+                "lsmod | grep -E 'usbip_host|usbip_core'", timeout=10
             )
-            if modprobe_cmd:
-                stdin, stdout, stderr = ssh_client.exec_command(modprobe_cmd)
-                stderr_output = stderr.read().decode().strip()
-                if stderr_output and "already loaded" not in stderr_output.lower():
-                    operations.append("⚠️ Kernel modules may have failed to load")
-                else:
-                    operations.append("✅ USB/IP kernel modules loaded")
+            modules_output = stdout.read().decode().strip()
+            modules_already_loaded = (
+                "usbip_host" in modules_output and "usbip_core" in modules_output
+            )
+
+            if modules_already_loaded:
+                operations.append("✅ USB/IP kernel modules already loaded")
             else:
-                operations.append("❌ Failed to build modprobe command")
+                # Load kernel modules using secure command builder
+                modprobe_cmd = SecureCommandBuilder.build_modprobe_command(
+                    "usbip_host usbip_core", password, remote_execution=True
+                )
+
+                if modprobe_cmd:
+                    try:
+                        stdin, stdout, stderr = ssh_client.exec_command(
+                            modprobe_cmd, timeout=30
+                        )
+                        stderr_output = stderr.read().decode().strip()
+                        if (
+                            stderr_output
+                            and "already loaded" not in stderr_output.lower()
+                        ):
+                            operations.append(
+                                "⚠️ Kernel modules may have failed to load"
+                            )
+                        else:
+                            operations.append("✅ USB/IP kernel modules loaded")
+                    except Exception as modprobe_error:
+                        # Don't fail the entire operation if modules are likely already loaded
+                        operations.append(
+                            "⚠️ Module loading skipped (likely already loaded)"
+                        )
+                else:
+                    operations.append("❌ Failed to build modprobe command")
 
             # Find the correct service name to start
             service_to_start = "usbipd"  # Default
             for service_name in ["usbipd", "usbip", "usbip-daemon"]:
                 stdin, stdout, stderr = ssh_client.exec_command(
-                    f"systemctl list-unit-files | grep {service_name} | head -1"
+                    f"systemctl list-unit-files | grep {service_name} | head -1",
+                    timeout=10,
                 )
                 if stdout.read().decode().strip():
                     service_to_start = service_name
@@ -200,33 +279,53 @@ class LinuxUSBIPServiceManager:
             if not start_cmd:
                 return False, "Failed to build secure start command"
 
-            stdin, stdout, stderr = ssh_client.exec_command(start_cmd)
-            stderr_output = stderr.read().decode().strip()
-            if stderr_output and "failed" in stderr_output.lower():
-                return (
-                    False,
-                    f"Failed to start {service_to_start} service: {stderr_output}",
+            # Issue the start command (don't rely on immediate response for success/failure)
+            try:
+                stdin, stdout, stderr = ssh_client.exec_command(start_cmd, timeout=1)
+                stderr_output = stderr.read().decode().strip()
+
+                # Only fail immediately if there's an obvious error
+                if stderr_output and (
+                    "failed" in stderr_output.lower()
+                    or "error" in stderr_output.lower()
+                ):
+                    return (
+                        False,
+                        f"Failed to start {service_to_start} service: {stderr_output}",
+                    )
+
+                operations.append(f"✅ {service_to_start} start command issued")
+            except Exception as start_error:
+                # Don't fail completely - the service might still start
+                operations.append(
+                    f"⚠️ {service_to_start} start command timed out (expected)"
                 )
 
-            operations.append(f"✅ {service_to_start} daemon started")
+            # Wait 5 seconds for the service to fully initialize
+            operations.append("⏳ Waiting 5 seconds for service to initialize...")
+            time.sleep(5)
 
-            # Wait for service to fully start
-            time.sleep(3)
-
-            # Check if it's actually running
+            # Check actual status to determine if startup was successful
             is_operational, status_message, daemon_running = (
                 LinuxUSBIPServiceManager.check_service_status(ssh_client, password)
             )
 
             if daemon_running:
-                operations.append("✅ Service startup confirmed")
+                operations.append("✅ USB/IP daemon successfully started and running")
                 return True, "\n".join(operations)
             else:
-                operations.append("⚠️ Service may still be starting")
-                return True, "\n".join(operations)
+                # Service failed to start properly
+                operations.append("❌ Service failed to start or is not running")
+                operations.append("Status details:")
+                for line in status_message.split("\n"):
+                    operations.append(f"  {line}")
+                return False, "\n".join(operations)
 
         except Exception as e:
-            return False, f"Failed to start service: {str(e)}"
+            return (
+                False,
+                f"Failed to start service: {str(e) if str(e) else 'Unknown error occurred'}",
+            )
 
     @staticmethod
     def stop_service(ssh_client, password):
@@ -246,7 +345,7 @@ class LinuxUSBIPServiceManager:
                 )
 
             # Execute the command
-            stdin, stdout, stderr = ssh_client.exec_command(stop_cmd)
+            stdin, stdout, stderr = ssh_client.exec_command(stop_cmd, timeout=20)
             stderr_output = stderr.read().decode().strip()
             stdout_output = stdout.read().decode().strip()
 
@@ -285,7 +384,7 @@ class LinuxUSBIPServiceManager:
             if not enable_cmd:
                 return False, "Failed to build secure enable command"
 
-            stdin, stdout, stderr = ssh_client.exec_command(enable_cmd)
+            stdin, stdout, stderr = ssh_client.exec_command(enable_cmd, timeout=15)
             stderr_output = stderr.read().decode().strip()
             if stderr_output and "Failed" in stderr_output:
                 return False, f"Failed to enable auto-start: {stderr_output}"
@@ -308,7 +407,7 @@ class LinuxUSBIPServiceManager:
             if not disable_cmd:
                 return False, "Failed to build secure disable command"
 
-            stdin, stdout, stderr = ssh_client.exec_command(disable_cmd)
+            stdin, stdout, stderr = ssh_client.exec_command(disable_cmd, timeout=15)
             stderr_output = stderr.read().decode().strip()
             if stderr_output and "Failed" in stderr_output:
                 return False, f"Failed to disable auto-start: {stderr_output}"
@@ -325,49 +424,100 @@ class LinuxUSBIPServiceManager:
         Returns: (success, message, version_info)
         """
         try:
-            # Check for usbip command
-            stdin, stdout, stderr = ssh_client.exec_command(
-                "usbip version 2>/dev/null || usbip --version 2>/dev/null || echo 'not found'"
-            )
-            version_output = stdout.read().decode().strip()
+            # Check for usbip and usbipd commands
+            # Try both regular and sudo versions as some distributions require sudo
+            # Include PATH expansion to handle cases where commands are not in SSH PATH
+            commands_to_try = [
+                "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; usbip version 2>/dev/null",
+                "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; sudo usbip version 2>/dev/null",
+                "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; usbipd --version 2>/dev/null",
+                "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; sudo usbipd --version 2>/dev/null",
+            ]
 
-            if "not found" in version_output:
+            version_outputs = []
+            usbip_found = False
+            usbipd_found = False
+
+            for cmd in commands_to_try:
+                stdin, stdout, stderr = ssh_client.exec_command(cmd, timeout=10)
+                output = stdout.read().decode().strip()
+                error = stderr.read().decode().strip()
+
+                if output and not error:
+                    if "usbip" in cmd and "usbipd" not in cmd:
+                        usbip_found = True
+                        version_outputs.append(f"usbip: {output}")
+                    elif "usbipd" in cmd:
+                        usbipd_found = True
+                        version_outputs.append(f"usbipd: {output}")
+
+            if not usbip_found and not usbipd_found:
                 return (
                     False,
-                    "USB/IP tools not installed. Install with: sudo apt install linux-tools-generic (Ubuntu) or equivalent",
+                    "USB/IP tools not installed. Install with: sudo apt install usbip (Raspberry Pi) or linux-tools-generic (Ubuntu)",
                     "",
                 )
 
-            # Check for systemd service
+            # Check for systemd service (optional - not all setups use systemd service)
             stdin, stdout, stderr = ssh_client.exec_command(
-                "systemctl list-unit-files | grep usbipd || echo 'no service'"
+                "systemctl list-unit-files | grep usbipd || echo 'no service'",
+                timeout=10,
             )
             service_output = stdout.read().decode().strip()
 
-            if "no service" in service_output:
-                return (
-                    False,
-                    "usbipd systemd service not found. USB/IP may not be properly installed",
-                    version_output,
-                )
+            # Combine all version information
+            combined_versions = (
+                "; ".join(version_outputs) if version_outputs else "versions unknown"
+            )
 
             # Check kernel modules availability
             stdin, stdout, stderr = ssh_client.exec_command(
-                "modinfo usbip_host usbip_core 2>/dev/null | grep -E '^filename:' | wc -l"
+                "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; modinfo usbip_host usbip_core 2>/dev/null | grep -E '^filename:' | wc -l",
+                timeout=10,
             )
-            module_count = stdout.read().decode().strip()
+            module_count_str = stdout.read().decode().strip()
+            stderr_output = stderr.read().decode().strip()
 
-            if int(module_count) < 2:
-                return (
-                    False,
-                    "USB/IP kernel modules not available. Install linux-tools or usbip packages",
-                    version_output,
+            try:
+                module_count = int(module_count_str) if module_count_str else 0
+            except ValueError:
+                module_count = 0
+
+            if module_count < 2:
+                # Try alternative check - some systems might not have modinfo in PATH
+                stdin, stdout, stderr = ssh_client.exec_command(
+                    "PATH=$PATH:/usr/local/bin:/usr/sbin:/sbin:/bin:/usr/bin; find /lib/modules/$(uname -r) -name '*usbip*' 2>/dev/null | wc -l",
+                    timeout=10,
                 )
+                alt_count_str = stdout.read().decode().strip()
+                try:
+                    alt_count = int(alt_count_str) if alt_count_str else 0
+                except ValueError:
+                    alt_count = 0
 
+                if alt_count < 2:
+                    # Final fallback - check if modules are currently loaded (means they're available)
+                    stdin, stdout, stderr = ssh_client.exec_command(
+                        "lsmod | grep -E 'usbip_host|usbip_core' | wc -l", timeout=10
+                    )
+                    loaded_count_str = stdout.read().decode().strip()
+                    try:
+                        loaded_count = int(loaded_count_str) if loaded_count_str else 0
+                    except ValueError:
+                        loaded_count = 0
+
+                    if loaded_count < 2:
+                        return (
+                            False,
+                            "USB/IP kernel modules not available. Install linux-tools or usbip packages",
+                            combined_versions,
+                        )
+
+            # Success if we found at least one working command
             return (
                 True,
-                f"USB/IP installation verified - {version_output}",
-                version_output,
+                f"USB/IP installation verified - {combined_versions}",
+                combined_versions,
             )
 
         except Exception as e:
@@ -386,7 +536,7 @@ class LinuxUSBIPServiceManager:
             if not modprobe_cmd:
                 return False, "Failed to build secure modprobe command"
 
-            stdin, stdout, stderr = ssh_client.exec_command(modprobe_cmd)
+            stdin, stdout, stderr = ssh_client.exec_command(modprobe_cmd, timeout=30)
             stderr_output = stderr.read().decode().strip()
 
             if (
@@ -425,11 +575,13 @@ class LinuxUSBIPServiceManager:
                 return False, "Failed to build secure modprobe remove command"
 
             # Try to unload modules (may fail if in use)
-            stdin, stdout, stderr = ssh_client.exec_command(f"{unload_cmd} 2>/dev/null")
+            stdin, stdout, stderr = ssh_client.exec_command(
+                f"{unload_cmd} 2>/dev/null", timeout=20
+            )
 
             # Check if modules are still loaded
             stdin, stdout, stderr = ssh_client.exec_command(
-                "lsmod | grep -E 'usbip_host|usbip_core' | wc -l"
+                "lsmod | grep -E 'usbip_host|usbip_core' | wc -l", timeout=10
             )
             loaded_count = stdout.read().decode().strip()
 

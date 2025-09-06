@@ -114,6 +114,7 @@ def is_windows_usbipd_available():
         return True  # On Unix-like systems, assume standard usbip tools
 
     try:
+        # Windows USB/IP client uses --version (different from Linux which uses just 'version')
         result = subprocess.run(
             ["usbip", "--version"],
             stdout=subprocess.PIPE,
