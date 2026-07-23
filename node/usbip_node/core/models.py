@@ -65,5 +65,13 @@ class DetachRequest(BaseModel):
     port: str
 
 
+class ReleaseRequest(BaseModel):
+    """Fully release an attached device: detach on the destination AND unbind on the source,
+    so the user never thinks about sharing/binding. Just send and detach."""
+
+    dest_node_id: str
+    port: str
+
+
 class PeerRef(BaseModel):
     url: str  # base URL, e.g. http://192.168.2.50:4820

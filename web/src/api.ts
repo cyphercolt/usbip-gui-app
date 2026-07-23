@@ -31,10 +31,10 @@ export async function removePeer(url: string): Promise<CommandResponse> {
   return res.json();
 }
 
-export const share = (nodeId: string, busid: string) => post(`/api/node/${nodeId}/bind`, { busid });
-export const unshare = (nodeId: string, busid: string) =>
-  post(`/api/node/${nodeId}/unbind`, { busid });
-export const detach = (nodeId: string, port: string) => post(`/api/node/${nodeId}/detach`, { port });
+// "Release" = detach on the destination AND unbind on the source, so the user only thinks in
+// terms of send / detach — never share/unshare.
+export const release = (destNodeId: string, port: string) =>
+  post("/api/detach", { dest_node_id: destNodeId, port });
 
 export const orchestrateAttach = (sourceNodeId: string, busid: string, destNodeId: string) =>
   post("/api/attach", {

@@ -10,6 +10,7 @@ Two layers of endpoints:
 from __future__ import annotations
 
 import asyncio
+from typing import Callable
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
@@ -26,6 +27,7 @@ from ..core.models import (
     NodeState,
     OrchestrateAttach,
     PeerRef,
+    ReleaseRequest,
 )
 from ..events import StateBus
 from ..hub import gather_fleet, post_command
@@ -38,7 +40,12 @@ def _to_response(result) -> CommandResponse:
     return CommandResponse(ok=result.ok, message=msg)
 
 
-def build_router(cfg: NodeConfig, bus: StateBus, registry: PeerRegistry) -> APIRouter:
+def build_router(
+    cfg: NodeConfig,
+    bus: StateBus,
+    registry: PeerRegistry,
+    peer_urls: Callable[[], list[str]],
+) -> APIRouter:
     r = APIRouter()
 
     def auth(authorization: str | None = Header(default=None)) -> None:
@@ -122,13 +129,13 @@ def build_router(cfg: NodeConfig, bus: StateBus, registry: PeerRegistry) -> APIR
     # ---- hub layer ----
     @r.get("/api/fleet", response_model=list[NodeState])
     async def _fleet() -> list[NodeState]:
-        fleet, _ = await gather_fleet(local_state(), registry.urls())
+        fleet, _ = await gather_fleet(local_state(), peer_urls())
         return fleet
 
     @r.post("/api/attach", response_model=CommandResponse)
     async def _orchestrate(req: OrchestrateAttach) -> CommandResponse:
         """Bind the device on the source, then attach it on the destination."""
-        fleet, id_to_url = await gather_fleet(local_state(), registry.urls())
+        fleet, id_to_url = await gather_fleet(local_state(), peer_urls())
         by_id = {n.info.node_id: n for n in fleet}
         source = by_id.get(req.source_node_id)
         dest = by_id.get(req.dest_node_id)
@@ -164,12 +171,51 @@ def build_router(cfg: NodeConfig, bus: StateBus, registry: PeerRegistry) -> APIR
             message=f"attached {req.busid} from {source.info.display_name} to {dest.info.display_name}",
         )
 
+    @r.post("/api/detach", response_model=CommandResponse)
+    async def _release(req: ReleaseRequest) -> CommandResponse:
+        """Detach on the destination AND unbind on the source, so 'detach' fully frees the device
+        to be sent elsewhere — the user never touches share/unshare."""
+        fleet, id_to_url = await gather_fleet(local_state(), peer_urls())
+        by_id = {n.info.node_id: n for n in fleet}
+        dest = by_id.get(req.dest_node_id)
+        if dest is None:
+            raise HTTPException(status_code=404, detail="destination node not found")
+        attached = next((a for a in dest.attached if a.port == req.port), None)
+
+        async with httpx.AsyncClient() as client:
+            # 1) detach on the destination
+            if dest.info.node_id == cfg.node_id:
+                detach_res = _to_response(local.detach(req.port))
+            else:
+                detach_res = await post_command(
+                    client, id_to_url[dest.info.node_id], "/api/local/detach",
+                    {"port": req.port}, cfg.token,
+                )
+            # 2) best-effort unbind on the source (found by matching its advertised host)
+            unbound = ""
+            if attached and attached.remote_host and attached.busid:
+                source = next((n for n in fleet if n.info.host == attached.remote_host), None)
+                if source is not None:
+                    if source.info.node_id == cfg.node_id:
+                        u = _to_response(local.unbind(attached.busid))
+                    else:
+                        u = await post_command(
+                            client, id_to_url[source.info.node_id], "/api/local/unbind",
+                            {"busid": attached.busid}, cfg.token,
+                        )
+                    unbound = " and freed on source" if u.ok else " (source still bound)"
+
+        bus.publish()
+        if not detach_res.ok:
+            return CommandResponse(ok=False, message=f"detach failed: {detach_res.message}")
+        return CommandResponse(ok=True, message=f"detached{unbound}")
+
     # ---- per-node commands via the hub (browser talks only to the node serving the page) ----
     async def _resolve(node_id: str) -> tuple[bool, str | None]:
         """Map a node_id to (is_self, peer_url). peer_url is None if self or not found."""
         if node_id == cfg.node_id:
             return True, None
-        _, id_to_url = await gather_fleet(local_state(), registry.urls())
+        _, id_to_url = await gather_fleet(local_state(), peer_urls())
         return False, id_to_url.get(node_id)
 
     async def _run_on(node_id: str, local_fn, path: str, payload: dict) -> CommandResponse:

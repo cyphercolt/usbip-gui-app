@@ -12,6 +12,7 @@ from usbip_node.server import create_app
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("USBIP_NODE_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("USBIP_NODE_DISABLE_MDNS", "1")
     cfg = NodeConfig(
         node_id="abc123",
         display_name="testnode",
@@ -73,8 +74,14 @@ def test_orchestrate_unknown_nodes_404(client):
     assert r.status_code == 404
 
 
+def test_release_unknown_node_404(client):
+    r = client.post("/api/detach", json={"dest_node_id": "nope", "port": "00"})
+    assert r.status_code == 404
+
+
 def test_token_gate(tmp_path, monkeypatch):
     monkeypatch.setenv("USBIP_NODE_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("USBIP_NODE_DISABLE_MDNS", "1")
     cfg = NodeConfig(node_id="tok", display_name="t", token="s3cret", os_name="linux")
     c = TestClient(create_app(cfg))
     # command endpoints require the token now

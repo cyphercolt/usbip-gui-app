@@ -86,7 +86,8 @@ export default function FleetView({
             </button>
           </div>
           <p className="mt-2 text-xs text-white/30">
-            Auto-discovery arrives in Phase 2 — for now, add each machine once.
+            Machines on your network appear automatically. Add one by hand only if it's on another
+            subnet or mDNS is blocked.
           </p>
         </div>
       ) : (

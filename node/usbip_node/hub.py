@@ -46,14 +46,21 @@ async def post_command(
 async def gather_fleet(
     self_state: NodeState, peer_urls: list[str]
 ) -> tuple[list[NodeState], dict[str, str]]:
-    """Aggregate self + peers. Returns (fleet, node_id -> base_url for reachable peers)."""
+    """Aggregate self + peers, de-duplicated by node_id (a node can be reachable via both a
+    manual URL and mDNS). Returns (fleet, node_id -> base_url for reachable peers)."""
     fleet = [self_state]
     id_to_url: dict[str, str] = {}
+    seen = {self_state.info.node_id}
     async with httpx.AsyncClient() as client:
         for url in peer_urls:
             state = await fetch_peer_state(client, url)
             if state is None:
                 continue
-            id_to_url[state.info.node_id] = url
+            nid = state.info.node_id
+            if nid in seen:
+                id_to_url.setdefault(nid, url)  # already have this node; just remember a URL
+                continue
+            seen.add(nid)
+            id_to_url[nid] = url
             fleet.append(state)
     return fleet, id_to_url

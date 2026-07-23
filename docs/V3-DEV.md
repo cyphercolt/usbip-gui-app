@@ -56,8 +56,11 @@ Phase 2 wires up mDNS auto-discovery.
 - `GET /api/state` / `GET /api/fleet` — this node / this node + peers.
 - `POST /api/local/{bind,unbind,attach,detach}` — act on THIS machine (what a hub calls on a peer).
 - `POST /api/node/{node_id}/{bind,unbind,detach}` — hub forwards to the right machine.
-- `POST /api/attach` `{source_node_id, busid, dest_node_id}` — orchestrated any→any attach.
-- `GET/POST/DELETE /api/peers` — manual peer registry (Phase 2 replaces with mDNS).
+- `POST /api/attach` `{source_node_id, busid, dest_node_id}` — orchestrated any→any attach
+  (binds the source, attaches the dest). The user never touches share/unshare.
+- `POST /api/detach` `{dest_node_id, port}` — full release: detach on the dest AND unbind on the
+  source, so the device is immediately free to send elsewhere.
+- `GET/POST/DELETE /api/peers` — manual peer registry (fallback; mDNS auto-discovers peers).
 - `WS /ws` — live state push for the connected node (UI uses it as a refetch nudge).
 
 ## Status
@@ -66,4 +69,8 @@ Phase 2 wires up mDNS auto-discovery.
 - **Phase 1** (two-machine vertical slice) — done: local + hub-proxied bind/unbind/attach/detach,
   any→any attach orchestration, peer registry, fleet view + machine view + "Send to…" attach flow,
   systemd packaging (root service = no sudo prompts). Verified across two local instances.
-- **Next: Phase 2** — mDNS auto-discovery + first-run pairing (no manual peer URLs), ping/latency.
+- **Phase 2** (auto-discovery) — done: mDNS advertise+browse (async zeroconf) so machines appear
+  automatically; fleet dedupes by node_id; "detach" now fully releases (detach dest + unbind source),
+  and share/unshare is hidden from the user.
+- **Next: Phase 3** — Windows node (usbipd-win / usbip-win2) + Windows service. Then Phase 4 polish
+  (auto-reconnect, themes, notifications) and optional pairing/token lockdown.

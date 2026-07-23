@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { detach, orchestrateAttach, unshare } from "./api";
+import { orchestrateAttach, release } from "./api";
 import { osBadge } from "./helpers";
 import type { NodeState } from "./types";
 
@@ -43,14 +43,6 @@ function ShareableRow({
           className="rounded-lg bg-sky-500/80 hover:bg-sky-500 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
         >
           Send to…
-        </button>
-        <button
-          disabled={busy}
-          onClick={() => run(() => unshare(node.info.node_id, busid))}
-          className="rounded-lg bg-white/10 hover:bg-white/15 px-2.5 py-1.5 text-xs disabled:opacity-40"
-          title="Stop sharing (unbind)"
-        >
-          Unshare
         </button>
       </div>
 
@@ -98,7 +90,7 @@ export default function MachineView({
   const [busy, setBusy] = useState(false);
   const doDetach = async (port: string) => {
     setBusy(true);
-    const res = await detach(node.info.node_id, port);
+    const res = await release(node.info.node_id, port);
     setBusy(false);
     notify(res.message || (res.ok ? "detached" : "failed"), res.ok);
     onChanged();
