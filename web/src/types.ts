@@ -19,7 +19,14 @@ export interface NodeInfo {
   display_name: string;
   os_name: string;
   version: string;
+  host: string;
+  port: number;
   reachable: boolean;
+}
+
+export interface CommandResponse {
+  ok: boolean;
+  message: string;
 }
 
 export interface NodeState {

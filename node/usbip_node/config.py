@@ -16,6 +16,28 @@ DEFAULT_PORT = 4820
 _STATE_DIR_ENV = "USBIP_NODE_STATE_DIR"
 
 
+def primary_ip() -> str:
+    """Best-guess LAN IP other machines can reach this one at.
+
+    Overridable with USBIP_NODE_ADVERTISE_HOST (recommended when a box has several NICs,
+    e.g. docker/tailscale interfaces). Falls back to a UDP-socket trick, then hostname.
+    """
+    override = os.environ.get("USBIP_NODE_ADVERTISE_HOST")
+    if override:
+        return override
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))  # no packets sent; just resolves the default-route source IP
+        return s.getsockname()[0]
+    except OSError:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except OSError:
+            return "127.0.0.1"
+    finally:
+        s.close()
+
+
 def state_dir() -> Path:
     """Where the node persists its identity / trust store."""
     override = os.environ.get(_STATE_DIR_ENV)
@@ -50,8 +72,10 @@ def _load_or_create_node_id(directory: Path) -> str:
 class NodeConfig:
     node_id: str
     display_name: str
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # bind address
     port: int = DEFAULT_PORT
+    advertise_host: str = "127.0.0.1"  # address peers/clients use to reach usbip + API
+    token: str | None = None  # optional shared secret gating command endpoints (Phase 2 -> pairing)
     os_name: str = field(default_factory=lambda: platform.system().lower())
 
     @classmethod
@@ -62,4 +86,6 @@ class NodeConfig:
             display_name=os.environ.get("USBIP_NODE_NAME", socket.gethostname()),
             host=os.environ.get("USBIP_NODE_HOST", "0.0.0.0"),
             port=int(os.environ.get("USBIP_NODE_PORT", DEFAULT_PORT)),
+            advertise_host=primary_ip(),
+            token=os.environ.get("USBIP_NODE_TOKEN") or None,
         )

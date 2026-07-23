@@ -1,89 +1,47 @@
-import { useEffect, useState } from "react";
-import { connectState, getFleet } from "./api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { getFleet, watchChanges } from "./api";
+import FleetView from "./FleetView";
+import { useFullscreen } from "./helpers";
+import MachineView from "./MachineView";
 import type { NodeState } from "./types";
 
-function osBadge(os: string): string {
-  if (os.includes("win")) return "🪟";
-  if (os.includes("linux")) return "🐧";
-  return "💻";
-}
-
-function useFullscreen(): [boolean, () => void] {
-  const [fs, setFs] = useState(!!document.fullscreenElement);
-  useEffect(() => {
-    const onChange = () => setFs(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", onChange);
-    return () => document.removeEventListener("fullscreenchange", onChange);
-  }, []);
-  const toggle = () => {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
-    } else {
-      void document.documentElement.requestFullscreen().catch(() => {});
-    }
-  };
-  return [fs, toggle];
-}
-
-function NodeCard({ node }: { node: NodeState }) {
-  return (
-    <div className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 shadow-lg">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xl">{osBadge(node.info.os_name)}</span>
-          <div>
-            <div className="font-semibold leading-tight">{node.info.display_name}</div>
-            <div className="text-xs text-white/40">
-              {node.info.os_name} · v{node.info.version}
-            </div>
-          </div>
-        </div>
-        <span
-          className={`h-2.5 w-2.5 rounded-full ${node.info.reachable ? "bg-emerald-400" : "bg-white/20"}`}
-        />
-      </div>
-
-      <div className="mt-3 flex gap-2 text-xs">
-        <span className="rounded-full bg-sky-500/15 text-sky-300 px-2.5 py-1">
-          {node.shareable.length} shareable
-        </span>
-        <span className="rounded-full bg-violet-500/15 text-violet-300 px-2.5 py-1">
-          {node.attached.length} attached
-        </span>
-      </div>
-
-      {node.shareable.length > 0 && (
-        <ul className="mt-3 space-y-1.5">
-          {node.shareable.map((d) => (
-            <li key={d.busid} className="flex items-center gap-2 text-sm">
-              <code className="text-white/50 text-xs w-16 shrink-0">{d.busid}</code>
-              <span className="truncate text-white/80">{d.description}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
+interface Toast {
+  id: number;
+  msg: string;
+  ok: boolean;
 }
 
 export default function App() {
   const [fleet, setFleet] = useState<NodeState[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
   const [live, setLive] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
   const [isFs, toggleFs] = useFullscreen();
+  const toastId = useRef(0);
+
+  const refresh = useCallback(() => {
+    getFleet()
+      .then(setFleet)
+      .catch(() => {});
+  }, []);
+
+  const notify = useCallback((msg: string, ok: boolean) => {
+    const id = ++toastId.current;
+    setToasts((t) => [...t, { id, msg, ok }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+  }, []);
 
   useEffect(() => {
-    getFleet().then(setFleet).catch(() => {});
-    // Live updates for the node serving this page; merge into the fleet list by node_id.
-    const stop = connectState(
-      (s) =>
-        setFleet((prev) => {
-          const next = prev.filter((n) => n.info.node_id !== s.info.node_id);
-          return [s, ...next].sort((a, b) => a.info.display_name.localeCompare(b.info.display_name));
-        }),
-      setLive,
-    );
-    return stop;
-  }, []);
+    refresh();
+    const poll = setInterval(refresh, 3000); // fleet includes peers; poll to catch their changes
+    const stop = watchChanges(refresh, setLive); // instant nudge on local changes
+    return () => {
+      clearInterval(poll);
+      stop();
+    };
+  }, [refresh]);
+
+  const selectedNode = selected ? fleet.find((n) => n.info.node_id === selected) : undefined;
 
   return (
     <div className="mx-auto max-w-3xl px-4 pb-16 pt-[max(1rem,env(safe-area-inset-top))]">
@@ -92,7 +50,7 @@ export default function App() {
           <h1 className="text-2xl font-bold tracking-tight">USB/IP Fleet</h1>
           <p className="flex items-center gap-1.5 text-xs text-white/40">
             <span className={`h-2 w-2 rounded-full ${live ? "bg-emerald-400" : "bg-amber-400"}`} />
-            {live ? "live" : "connecting…"}
+            {live ? "live" : "connecting…"} · {fleet.length} machine{fleet.length === 1 ? "" : "s"}
           </p>
         </div>
         <button
@@ -103,15 +61,35 @@ export default function App() {
         </button>
       </header>
 
-      {fleet.length === 0 ? (
+      {selectedNode ? (
+        <MachineView
+          node={selectedNode}
+          fleet={fleet}
+          notify={notify}
+          onChanged={refresh}
+          onBack={() => setSelected(null)}
+        />
+      ) : fleet.length === 0 ? (
         <div className="mt-16 text-center text-white/40">Looking for machines…</div>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {fleet.map((n) => (
-            <NodeCard key={n.info.node_id} node={n} />
-          ))}
-        </div>
+        <FleetView fleet={fleet} onOpen={setSelected} notify={notify} onChanged={refresh} />
       )}
+
+      {/* toasts */}
+      <div className="fixed inset-x-0 bottom-4 flex flex-col items-center gap-2 px-4 pointer-events-none">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            className={`max-w-lg w-full rounded-xl px-4 py-2.5 text-sm shadow-lg ring-1 ${
+              t.ok
+                ? "bg-emerald-500/15 ring-emerald-400/30 text-emerald-100"
+                : "bg-rose-500/15 ring-rose-400/30 text-rose-100"
+            }`}
+          >
+            {t.msg}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

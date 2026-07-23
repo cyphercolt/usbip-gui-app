@@ -1,0 +1,22 @@
+[Unit]
+Description=usbip-node — USB/IP fleet control (agent + hub + web)
+Documentation=https://github.com/cyphercolt/usbip-gui-app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Runs as root so `usbip` bind/attach need no sudo password (this is the "no sudo prompts"
+# requirement). For a least-privilege setup instead, run as a dedicated user + a scoped
+# NOPASSWD sudoers rule and have the core prefix sudo — see packaging/install-linux.sh.
+User=root
+Environment=USBIP_NODE_PORT=4820
+# Make sure the USB/IP kernel modules are present before we start.
+ExecStartPre=-/sbin/modprobe vhci_hcd
+ExecStartPre=-/sbin/modprobe usbip_host
+ExecStart=/opt/usbip-node/.venv/bin/python -m usbip_node
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

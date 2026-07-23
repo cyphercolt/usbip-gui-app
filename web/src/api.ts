@@ -1,6 +1,18 @@
-// Same-origin API client. The page is served by a node, and it talks to that same node;
-// that node fans out to peers server-side (Phase 2).
-import type { NodeState } from "./types";
+// Same-origin API client. The page is served by a node; that node acts as the hub and forwards
+// per-node commands to the right peer, so the browser only ever talks to this one origin.
+import type { CommandResponse, NodeState } from "./types";
+
+async function post(path: string, body?: unknown): Promise<CommandResponse> {
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok && res.status !== 200) {
+    return { ok: false, message: `HTTP ${res.status}` };
+  }
+  return res.json();
+}
 
 export async function getFleet(): Promise<NodeState[]> {
   const res = await fetch("/api/fleet");
@@ -8,32 +20,39 @@ export async function getFleet(): Promise<NodeState[]> {
   return res.json();
 }
 
-export async function getHealth(): Promise<boolean> {
-  try {
-    const res = await fetch("/health");
-    return res.ok;
-  } catch {
-    return false;
-  }
+export const addPeer = (url: string) => post("/api/peers", { url });
+
+export async function removePeer(url: string): Promise<CommandResponse> {
+  const res = await fetch("/api/peers", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  return res.json();
 }
 
-// Live state push for the node serving this page. Returns a cleanup function.
-export function connectState(onState: (s: NodeState) => void, onStatus: (up: boolean) => void): () => void {
+export const share = (nodeId: string, busid: string) => post(`/api/node/${nodeId}/bind`, { busid });
+export const unshare = (nodeId: string, busid: string) =>
+  post(`/api/node/${nodeId}/unbind`, { busid });
+export const detach = (nodeId: string, port: string) => post(`/api/node/${nodeId}/detach`, { port });
+
+export const orchestrateAttach = (sourceNodeId: string, busid: string, destNodeId: string) =>
+  post("/api/attach", {
+    source_node_id: sourceNodeId,
+    busid,
+    dest_node_id: destNodeId,
+  });
+
+// A WebSocket to the serving node; we use any message as a "something changed, refetch fleet" nudge.
+export function watchChanges(onNudge: () => void, onStatus: (up: boolean) => void): () => void {
   let ws: WebSocket | null = null;
   let closed = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
-
   const open = () => {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.onopen = () => onStatus(true);
-    ws.onmessage = (ev) => {
-      try {
-        onState(JSON.parse(ev.data) as NodeState);
-      } catch {
-        /* ignore malformed frame */
-      }
-    };
+    ws.onmessage = () => onNudge();
     ws.onclose = () => {
       onStatus(false);
       if (!closed) retry = setTimeout(open, 2000);
@@ -41,7 +60,6 @@ export function connectState(onState: (s: NodeState) => void, onStatus: (up: boo
     ws.onerror = () => ws?.close();
   };
   open();
-
   return () => {
     closed = true;
     if (retry) clearTimeout(retry);

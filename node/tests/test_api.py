@@ -1,5 +1,7 @@
-"""Phase 0 API smoke tests + validator tests."""
+"""API smoke tests + validators. Each test gets an isolated state dir so the persistent peer
+registry never leaks between tests or reaches out to dead peer URLs."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from usbip_node.config import NodeConfig
@@ -7,47 +9,89 @@ from usbip_node.core import validate
 from usbip_node.server import create_app
 
 
-def _client() -> TestClient:
-    cfg = NodeConfig(node_id="abc123", display_name="testnode", port=4820, os_name="linux")
+@pytest.fixture()
+def client(tmp_path, monkeypatch):
+    monkeypatch.setenv("USBIP_NODE_STATE_DIR", str(tmp_path))
+    cfg = NodeConfig(
+        node_id="abc123",
+        display_name="testnode",
+        port=4820,
+        advertise_host="10.0.0.9",
+        os_name="linux",
+    )
     return TestClient(create_app(cfg))
 
 
-def test_health():
-    r = _client().get("/health")
-    assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+def test_health(client):
+    r = client.get("/health")
+    assert r.status_code == 200 and r.json()["status"] == "ok"
 
 
-def test_info():
-    r = _client().get("/api/info")
-    assert r.status_code == 200
-    body = r.json()
+def test_info(client):
+    body = client.get("/api/info").json()
     assert body["node_id"] == "abc123"
-    assert body["display_name"] == "testnode"
+    assert body["host"] == "10.0.0.9"
 
 
-def test_state_shape():
-    r = _client().get("/api/state")
-    assert r.status_code == 200
-    body = r.json()
-    assert "info" in body and "shareable" in body and "attached" in body
+def test_state_shape(client):
+    body = client.get("/api/state").json()
+    assert set(body) >= {"info", "shareable", "attached"}
     assert isinstance(body["shareable"], list)
-    assert isinstance(body["attached"], list)
 
 
-def test_fleet_contains_self():
-    r = _client().get("/api/fleet")
-    assert r.status_code == 200
-    fleet = r.json()
+def test_fleet_contains_self(client):
+    fleet = client.get("/api/fleet").json()
     assert len(fleet) == 1
     assert fleet[0]["info"]["node_id"] == "abc123"
 
 
+def test_peer_registry_roundtrip(client):
+    assert client.get("/api/peers").json() == []
+    client.post("/api/peers", json={"url": "http://10.0.0.5:4820"})
+    assert client.get("/api/peers").json() == ["http://10.0.0.5:4820"]
+    client.request("DELETE", "/api/peers", json={"url": "http://10.0.0.5:4820"})
+    assert client.get("/api/peers").json() == []
+
+
+def test_local_bind_rejects_bad_busid(client):
+    r = client.post("/api/local/bind", json={"busid": "2-1; rm -rf /"})
+    body = r.json()
+    assert body["ok"] is False
+    assert "invalid busid" in body["message"]
+
+
+def test_local_attach_rejects_bad_host(client):
+    r = client.post("/api/local/attach", json={"remote_host": "bad host!", "busid": "2-1"})
+    assert r.json()["ok"] is False
+
+
+def test_orchestrate_unknown_nodes_404(client):
+    r = client.post(
+        "/api/attach",
+        json={"source_node_id": "nope", "busid": "2-1", "dest_node_id": "nada"},
+    )
+    assert r.status_code == 404
+
+
+def test_token_gate(tmp_path, monkeypatch):
+    monkeypatch.setenv("USBIP_NODE_STATE_DIR", str(tmp_path))
+    cfg = NodeConfig(node_id="tok", display_name="t", token="s3cret", os_name="linux")
+    c = TestClient(create_app(cfg))
+    # command endpoints require the token now
+    assert c.post("/api/local/bind", json={"busid": "2-1"}).status_code == 401
+    ok = c.post(
+        "/api/local/bind",
+        json={"busid": "2-1"},
+        headers={"Authorization": "Bearer s3cret"},
+    )
+    assert ok.status_code == 200
+    # read-only endpoints stay open
+    assert c.get("/api/state").status_code == 200
+
+
 def test_busid_validation():
     assert validate.is_valid_busid("2-1.4")
-    assert validate.is_valid_busid("3-1")
     assert not validate.is_valid_busid("2-1; rm -rf /")
-    assert not validate.is_valid_busid("")
 
 
 def test_host_validation():

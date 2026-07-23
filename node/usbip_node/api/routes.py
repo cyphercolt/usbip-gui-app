@@ -1,69 +1,220 @@
 """REST + WebSocket routes.
 
-Phase 0 exposes: health, this node's info, and this node's local state (real usbip data on Linux).
-The fleet endpoint returns just this node for now; Phase 2 fills it with discovered peers.
+Two layers of endpoints:
+  * /api/local/*  act on THIS machine (bind/unbind = server role; attach/detach = client role).
+    These are what a hub calls on a peer.
+  * /api/fleet and /api/attach are the HUB layer: aggregate peers, and orchestrate an
+    any-PC -> any-PC attach on behalf of the phone.
 """
 
 from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
 
 from .. import __version__
 from ..config import NodeConfig
 from ..core import local
-from ..core.models import NodeInfo, NodeState
+from ..core.models import (
+    AttachRequest,
+    BusidRequest,
+    CommandResponse,
+    DetachRequest,
+    NodeInfo,
+    NodeState,
+    OrchestrateAttach,
+    PeerRef,
+)
+from ..events import StateBus
+from ..hub import gather_fleet, post_command
+from ..peers import PeerRegistry
 
 
-def _node_info(cfg: NodeConfig) -> NodeInfo:
-    return NodeInfo(
-        node_id=cfg.node_id,
-        display_name=cfg.display_name,
-        os_name=cfg.os_name,
-        version=__version__,
-        reachable=True,
-    )
+def _to_response(result) -> CommandResponse:
+    """Adapt a core CommandResult (subprocess) to the API CommandResponse."""
+    msg = (result.stderr or result.stdout or "").strip()
+    return CommandResponse(ok=result.ok, message=msg)
 
 
-def _local_state(cfg: NodeConfig) -> NodeState:
-    return NodeState(
-        info=_node_info(cfg),
-        shareable=local.list_shareable(),
-        attached=local.list_attached(),
-    )
-
-
-def build_router(cfg: NodeConfig) -> APIRouter:
-    """Bind routes to a concrete node config."""
+def build_router(cfg: NodeConfig, bus: StateBus, registry: PeerRegistry) -> APIRouter:
     r = APIRouter()
 
+    def auth(authorization: str | None = Header(default=None)) -> None:
+        """Gate command endpoints when a shared token is configured (Phase 2 -> real pairing)."""
+        if not cfg.token:
+            return
+        if authorization != f"Bearer {cfg.token}":
+            raise HTTPException(status_code=401, detail="missing or invalid token")
+
+    def node_info() -> NodeInfo:
+        return NodeInfo(
+            node_id=cfg.node_id,
+            display_name=cfg.display_name,
+            os_name=cfg.os_name,
+            version=__version__,
+            host=cfg.advertise_host,
+            port=cfg.port,
+            reachable=True,
+        )
+
+    def local_state() -> NodeState:
+        return NodeState(
+            info=node_info(),
+            shareable=local.list_shareable(),
+            attached=local.list_attached(),
+        )
+
+    # ---- basic ----
     @r.get("/health")
     def _health() -> dict:
         return {"status": "ok", "service": "usbip-node", "version": __version__}
 
     @r.get("/api/info", response_model=NodeInfo)
     def _info() -> NodeInfo:
-        return _node_info(cfg)
+        return node_info()
 
     @r.get("/api/state", response_model=NodeState)
     def _state() -> NodeState:
-        return _local_state(cfg)
+        return local_state()
 
+    # ---- peer registry ----
+    @r.get("/api/peers")
+    def _peers() -> list[str]:
+        return registry.urls()
+
+    @r.post("/api/peers", response_model=CommandResponse)
+    def _add_peer(ref: PeerRef, _: None = Depends(auth)) -> CommandResponse:
+        registry.add(ref.url)
+        return CommandResponse(ok=True, message=f"added {ref.url}")
+
+    @r.delete("/api/peers", response_model=CommandResponse)
+    def _del_peer(ref: PeerRef, _: None = Depends(auth)) -> CommandResponse:
+        registry.remove(ref.url)
+        return CommandResponse(ok=True, message=f"removed {ref.url}")
+
+    # ---- local commands (act on this machine) ----
+    @r.post("/api/local/bind", response_model=CommandResponse)
+    def _bind(req: BusidRequest, _: None = Depends(auth)) -> CommandResponse:
+        resp = _to_response(local.bind(req.busid))
+        bus.publish()
+        return resp
+
+    @r.post("/api/local/unbind", response_model=CommandResponse)
+    def _unbind(req: BusidRequest, _: None = Depends(auth)) -> CommandResponse:
+        resp = _to_response(local.unbind(req.busid))
+        bus.publish()
+        return resp
+
+    @r.post("/api/local/attach", response_model=CommandResponse)
+    def _attach(req: AttachRequest, _: None = Depends(auth)) -> CommandResponse:
+        resp = _to_response(local.attach(req.remote_host, req.busid))
+        bus.publish()
+        return resp
+
+    @r.post("/api/local/detach", response_model=CommandResponse)
+    def _detach(req: DetachRequest, _: None = Depends(auth)) -> CommandResponse:
+        resp = _to_response(local.detach(req.port))
+        bus.publish()
+        return resp
+
+    # ---- hub layer ----
     @r.get("/api/fleet", response_model=list[NodeState])
-    def _fleet() -> list[NodeState]:
-        # Phase 2: aggregate discovered peers. For now, just this node.
-        return [_local_state(cfg)]
+    async def _fleet() -> list[NodeState]:
+        fleet, _ = await gather_fleet(local_state(), registry.urls())
+        return fleet
 
+    @r.post("/api/attach", response_model=CommandResponse)
+    async def _orchestrate(req: OrchestrateAttach) -> CommandResponse:
+        """Bind the device on the source, then attach it on the destination."""
+        fleet, id_to_url = await gather_fleet(local_state(), registry.urls())
+        by_id = {n.info.node_id: n for n in fleet}
+        source = by_id.get(req.source_node_id)
+        dest = by_id.get(req.dest_node_id)
+        if source is None or dest is None:
+            raise HTTPException(status_code=404, detail="source or destination node not found")
+
+        async with httpx.AsyncClient() as client:
+            # 1) ensure the device is shared on the source
+            if source.info.node_id == cfg.node_id:
+                bind_res = _to_response(local.bind(req.busid))
+            else:
+                bind_res = await post_command(
+                    client, id_to_url[source.info.node_id], "/api/local/bind",
+                    {"busid": req.busid}, cfg.token,
+                )
+            if not bind_res.ok:
+                return CommandResponse(ok=False, message=f"bind on source failed: {bind_res.message}")
+
+            # 2) attach it on the destination, pointing at the source's usbip host
+            if dest.info.node_id == cfg.node_id:
+                attach_res = _to_response(local.attach(source.info.host, req.busid))
+            else:
+                attach_res = await post_command(
+                    client, id_to_url[dest.info.node_id], "/api/local/attach",
+                    {"remote_host": source.info.host, "busid": req.busid}, cfg.token,
+                )
+
+        bus.publish()
+        if not attach_res.ok:
+            return CommandResponse(ok=False, message=f"attach on dest failed: {attach_res.message}")
+        return CommandResponse(
+            ok=True,
+            message=f"attached {req.busid} from {source.info.display_name} to {dest.info.display_name}",
+        )
+
+    # ---- per-node commands via the hub (browser talks only to the node serving the page) ----
+    async def _resolve(node_id: str) -> tuple[bool, str | None]:
+        """Map a node_id to (is_self, peer_url). peer_url is None if self or not found."""
+        if node_id == cfg.node_id:
+            return True, None
+        _, id_to_url = await gather_fleet(local_state(), registry.urls())
+        return False, id_to_url.get(node_id)
+
+    async def _run_on(node_id: str, local_fn, path: str, payload: dict) -> CommandResponse:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            resp = _to_response(local_fn())
+        elif url:
+            async with httpx.AsyncClient() as client:
+                resp = await post_command(client, url, path, payload, cfg.token)
+        else:
+            raise HTTPException(status_code=404, detail="node not found")
+        bus.publish()
+        return resp
+
+    @r.post("/api/node/{node_id}/bind", response_model=CommandResponse)
+    async def _node_bind(node_id: str, req: BusidRequest) -> CommandResponse:
+        return await _run_on(node_id, lambda: local.bind(req.busid), "/api/local/bind",
+                             {"busid": req.busid})
+
+    @r.post("/api/node/{node_id}/unbind", response_model=CommandResponse)
+    async def _node_unbind(node_id: str, req: BusidRequest) -> CommandResponse:
+        return await _run_on(node_id, lambda: local.unbind(req.busid), "/api/local/unbind",
+                             {"busid": req.busid})
+
+    @r.post("/api/node/{node_id}/detach", response_model=CommandResponse)
+    async def _node_detach(node_id: str, req: DetachRequest) -> CommandResponse:
+        return await _run_on(node_id, lambda: local.detach(req.port), "/api/local/detach",
+                             {"port": req.port})
+
+    # ---- live state ----
     @r.websocket("/ws")
     async def _ws(ws: WebSocket) -> None:
-        """Push local state periodically. Phase 1 switches to event-driven push."""
         await ws.accept()
+        q = bus.subscribe()
         try:
+            await ws.send_json(local_state().model_dump())  # initial snapshot
             while True:
-                await ws.send_json(_local_state(cfg).model_dump())
-                await asyncio.sleep(3.0)
+                try:
+                    await asyncio.wait_for(q.get(), timeout=2.0)  # event OR periodic refresh
+                except asyncio.TimeoutError:
+                    pass
+                await ws.send_json(local_state().model_dump())
         except WebSocketDisconnect:
             return
+        finally:
+            bus.unsubscribe(q)
 
     return r

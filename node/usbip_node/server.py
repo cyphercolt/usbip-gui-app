@@ -11,6 +11,8 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .api.routes import build_router
 from .config import NodeConfig
+from .events import StateBus
+from .peers import PeerRegistry
 
 # Location of the built web app (Vite outputs to web/dist). Overridable for dev.
 _WEB_DIST_CANDIDATES = [
@@ -29,8 +31,12 @@ def _find_web_dist() -> Path | None:
 def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     cfg = cfg or NodeConfig.load()
     app = FastAPI(title="usbip-node", version=__version__)
+    bus = StateBus()
+    registry = PeerRegistry()
     app.state.config = cfg
-    app.include_router(build_router(cfg))
+    app.state.bus = bus
+    app.state.peers = registry
+    app.include_router(build_router(cfg, bus, registry))
 
     web_dist = _find_web_dist()
     if web_dist is not None:

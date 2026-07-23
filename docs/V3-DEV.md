@@ -39,8 +39,31 @@ cd node && pytest -q          # API smoke + validators
 cd web && npm run build       # typecheck + bundle
 ```
 
+## Deploy as a service (Linux / Raspberry Pi)
+
+On each machine (build the web UI first on a dev box, or let the script build it if `npm` is present):
+
+```bash
+sudo packaging/install-linux.sh      # installs usbip + a root systemd service on :4820
+```
+
+The service runs as root, so `usbip` bind/attach need **no sudo password**. Then on any machine's
+fleet view, "+ Add a machine" and enter another node's URL (e.g. `http://192.168.2.50:4820`) — until
+Phase 2 wires up mDNS auto-discovery.
+
+## API shape
+
+- `GET /api/state` / `GET /api/fleet` — this node / this node + peers.
+- `POST /api/local/{bind,unbind,attach,detach}` — act on THIS machine (what a hub calls on a peer).
+- `POST /api/node/{node_id}/{bind,unbind,detach}` — hub forwards to the right machine.
+- `POST /api/attach` `{source_node_id, busid, dest_node_id}` — orchestrated any→any attach.
+- `GET/POST/DELETE /api/peers` — manual peer registry (Phase 2 replaces with mDNS).
+- `WS /ws` — live state push for the connected node (UI uses it as a refetch nudge).
+
 ## Status
 
-Phase 0 (scaffolding) complete: node serves the SPA + real local USB/IP listing, live state over
-WebSocket, `/api/fleet` returns this node. Next: Phase 1 two-machine vertical slice (bind on one
-machine, attach on another) — see the plan.
+- **Phase 0** (scaffolding) — done.
+- **Phase 1** (two-machine vertical slice) — done: local + hub-proxied bind/unbind/attach/detach,
+  any→any attach orchestration, peer registry, fleet view + machine view + "Send to…" attach flow,
+  systemd packaging (root service = no sudo prompts). Verified across two local instances.
+- **Next: Phase 2** — mDNS auto-discovery + first-run pairing (no manual peer URLs), ping/latency.
