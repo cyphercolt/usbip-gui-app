@@ -5,9 +5,11 @@ Phase 0: minimal, env-driven. Later phases add the pairing token / trust store h
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import platform
 import socket
+import subprocess
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,27 +17,86 @@ from pathlib import Path
 DEFAULT_PORT = 4820
 _STATE_DIR_ENV = "USBIP_NODE_STATE_DIR"
 
+# Tailscale hands out CGNAT addresses in this range; we must NOT advertise those to LAN peers.
+_TAILSCALE_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+# Interface name prefixes that are not the real LAN NIC.
+_VIRTUAL_IFACES = ("tailscale", "docker", "br-", "veth", "virbr", "zt", "tun", "tap", "lo")
+
+
+def _enumerate_ipv4() -> list[tuple[str, str]]:
+    """Return [(iface_name, ipv4), ...] for global-scope addresses (Linux via `ip`)."""
+    out = []
+    try:
+        res = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", "scope", "global"],
+            capture_output=True, text=True, timeout=3,
+        )
+        for line in res.stdout.splitlines():
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            iface = parts[1]
+            for i, tok in enumerate(parts):
+                if tok == "inet" and i + 1 < len(parts):
+                    out.append((iface, parts[i + 1].split("/")[0]))
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return out
+
+
+def _score_ip(iface: str, ip: str) -> int:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return -1000
+    score = 0
+    low = iface.lower()
+    if any(low.startswith(p) for p in _VIRTUAL_IFACES):
+        score -= 100
+    if addr in _TAILSCALE_CGNAT:
+        score -= 100  # never advertise the tailnet address to LAN peers
+    elif ip.startswith("192.168."):
+        score += 30
+    elif ip.startswith("10."):
+        score += 25
+    elif addr.is_private:
+        score += 15  # 172.16/12 etc.
+    if any(low.startswith(p) for p in ("eth", "en", "eno", "enp", "wl", "wlan", "wlp")):
+        score += 5
+    return score
+
 
 def primary_ip() -> str:
     """Best-guess LAN IP other machines can reach this one at.
 
-    Overridable with USBIP_NODE_ADVERTISE_HOST (recommended when a box has several NICs,
-    e.g. docker/tailscale interfaces). Falls back to a UDP-socket trick, then hostname.
+    Overridable with USBIP_NODE_ADVERTISE_HOST. Otherwise prefers a real LAN NIC and explicitly
+    avoids Tailscale (100.64/10) and docker/bridge/virtual interfaces. Falls back to the UDP-socket
+    trick, then hostname.
     """
     override = os.environ.get("USBIP_NODE_ADVERTISE_HOST")
     if override:
         return override
+
+    candidates = _enumerate_ipv4()
+    if candidates:
+        iface, ip = max(candidates, key=lambda c: _score_ip(*c))
+        if _score_ip(iface, ip) > 0:
+            return ip
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("8.8.8.8", 80))  # no packets sent; just resolves the default-route source IP
-        return s.getsockname()[0]
+        s.connect(("8.8.8.8", 80))  # no packets sent; resolves the default-route source IP
+        ip = s.getsockname()[0]
+        if ipaddress.ip_address(ip) not in _TAILSCALE_CGNAT:
+            return ip
     except OSError:
-        try:
-            return socket.gethostbyname(socket.gethostname())
-        except OSError:
-            return "127.0.0.1"
+        pass
     finally:
         s.close()
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except OSError:
+        return "127.0.0.1"
 
 
 def state_dir() -> Path:
