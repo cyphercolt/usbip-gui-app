@@ -82,13 +82,15 @@ as Linux. Update later with `git pull` + re-run the script.
 
 Each node has a persistent `node_id` + secret `node_key` (in the state dir). Two modes:
 
-- **open** (default): any node on the LAN is trusted — nothing to pair. Existing fleets keep working.
-- **locked**: a peer must be paired before it can see devices or issue commands. Unpaired discovered
-  machines show as "pending" (🔒) in the fleet with a **Pair** button. Pairing is mutual-consent:
-  machine A taps *Pair*, machine B sees a request and taps *Accept* (🔒 badge shows a count). Node↔node
-  calls carry `X-Node-Id`/`X-Node-Key`; locked-mode `/api/state` and `/api/local/*` reject unpaired
-  callers. Lock down every machine for it to matter (browser→node is still open on the LAN — a synced
-  web login is Phase 5).
+- **locked** (default): a peer must be paired before it can see devices or issue commands. Unpaired
+  discovered machines show as "pending" (🔒) in the fleet with a **Pair** button. Pairing is
+  mutual-consent: machine A taps *Pair*, machine B sees a request and taps *Accept* (🔒 badge shows a
+  count). Node↔node calls carry `X-Node-Id`/`X-Node-Key`; locked-mode `/api/state` and `/api/local/*`
+  reject unpaired callers. (browser→node is still open on the LAN — a synced web login is Phase 5.)
+- **open**: any node on the LAN is trusted — nothing to pair (frictionless, less safe).
+
+Because locked is the default, a fresh fleet must pair once: each machine shows the others as pending
+and you approve them.
 
 ### Reset (to re-test pairing from scratch)
 

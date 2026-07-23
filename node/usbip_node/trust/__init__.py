@@ -1,10 +1,9 @@
 """Node-to-node trust, Syncthing-style.
 
 Two modes:
-  * "open"   (default) — any node on the LAN is trusted; nothing to pair. Keeps the frictionless
-    experience and means existing fleets keep working.
-  * "locked" — a peer must be explicitly paired before it can see devices or issue commands.
-    Discovery still finds machines, but unpaired ones show as "pending" until approved.
+  * "locked" (default) — a peer must be explicitly paired before it can see devices or issue
+    commands. Discovery still finds machines, but unpaired ones show as "pending" until approved.
+  * "open"  — any node on the LAN is trusted; nothing to pair (frictionless, less safe).
 
 Each node presents its own secret `node_key` on every node-to-node call; a peer that has stored that
 key (via pairing) trusts the caller.
@@ -31,13 +30,13 @@ class TrustStore:
     def _load(self) -> dict:
         try:
             data = json.loads(self._path.read_text())
-            data.setdefault("mode", OPEN)
+            data.setdefault("mode", LOCKED)  # secure by default: pairing required
             data.setdefault("trusted", {})
             data.setdefault("pending_in", {})
             data.setdefault("pending_out", {})
             return data
         except (OSError, json.JSONDecodeError):
-            return {"mode": OPEN, "trusted": {}, "pending_in": {}, "pending_out": {}}
+            return {"mode": LOCKED, "trusted": {}, "pending_in": {}, "pending_out": {}}
 
     def _save(self) -> None:
         try:

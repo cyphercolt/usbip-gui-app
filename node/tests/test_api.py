@@ -36,6 +36,7 @@ def test_info(client):
 
 
 def test_state_shape(client):
+    client.post("/api/security/mode", json={"mode": "open"})
     body = client.get("/api/state").json()
     assert set(body) >= {"info", "shareable", "attached"}
     assert isinstance(body["shareable"], list)
@@ -56,6 +57,7 @@ def test_peer_registry_roundtrip(client):
 
 
 def test_local_bind_rejects_bad_busid(client):
+    client.post("/api/security/mode", json={"mode": "open"})
     r = client.post("/api/local/bind", json={"busid": "2-1; rm -rf /"})
     body = r.json()
     assert body["ok"] is False
@@ -63,6 +65,7 @@ def test_local_bind_rejects_bad_busid(client):
 
 
 def test_local_attach_rejects_bad_host(client):
+    client.post("/api/security/mode", json={"mode": "open"})
     r = client.post("/api/local/attach", json={"remote_host": "bad host!", "busid": "2-1"})
     assert r.json()["ok"] is False
 
@@ -80,20 +83,19 @@ def test_release_unknown_node_404(client):
     assert r.status_code == 404
 
 
-def test_security_defaults_open(client):
+def test_security_defaults_locked(client):
     body = client.get("/api/security").json()
-    assert body["mode"] == "open"
+    assert body["mode"] == "locked"  # secure by default
     assert body["this_node"]["node_id"] == "abc123"
-    # open mode: state + commands need no pairing
-    assert client.get("/api/state").status_code == 200
-    assert client.post("/api/local/bind", json={"busid": "2-1"}).status_code == 200
-
-
-def test_locked_blocks_unpaired(client):
-    client.post("/api/security/mode", json={"mode": "locked"})
-    # node-to-node endpoints now require a paired identity
+    # locked default: node-to-node endpoints reject unpaired callers
     assert client.get("/api/state").status_code == 401
     assert client.post("/api/local/bind", json={"busid": "2-1"}).status_code == 401
+
+
+def test_open_mode_allows_unpaired(client):
+    client.post("/api/security/mode", json={"mode": "open"})
+    assert client.get("/api/state").status_code == 200
+    assert client.post("/api/local/bind", json={"busid": "2-1"}).status_code == 200
 
 
 def test_pairing_flow_locked(client):
