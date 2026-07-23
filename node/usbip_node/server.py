@@ -25,7 +25,9 @@ _WEB_DIST_CANDIDATES = [
 
 
 def _find_web_dist() -> Path | None:
-    for p in _WEB_DIST_CANDIDATES:
+    override = os.environ.get("USBIP_NODE_WEB_DIR")
+    candidates = ([Path(override)] if override else []) + _WEB_DIST_CANDIDATES
+    for p in candidates:
         if p.is_dir() and (p / "index.html").exists():
             return p
     return None

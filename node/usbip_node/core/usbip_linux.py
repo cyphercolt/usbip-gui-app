@@ -9,40 +9,15 @@ from __future__ import annotations
 
 import re
 import shutil
-import subprocess
-from dataclasses import dataclass
 
 from . import validate
 from .models import AttachedDevice, Device
+from .proc import CommandResult
+from .proc import run as _run
 
 _BUSID_LINE = re.compile(r"^\s*-\s*busid\s+(\S+)\s*\((\S+)\)")
 _PORT_LINE = re.compile(r"^Port\s+(\d+):")
 _REMOTE_URL = re.compile(r"usbip://([^:/]+)")
-
-
-@dataclass
-class CommandResult:
-    ok: bool
-    stdout: str
-    stderr: str
-    code: int
-
-
-def _run(argv: list[str], timeout: float = 15.0) -> CommandResult:
-    try:
-        proc = subprocess.run(
-            argv,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-        return CommandResult(proc.returncode == 0, proc.stdout, proc.stderr, proc.returncode)
-    except FileNotFoundError:
-        return CommandResult(False, "", "usbip binary not found", 127)
-    except subprocess.TimeoutExpired:
-        return CommandResult(False, "", "usbip command timed out", 124)
 
 
 def usbip_available() -> bool:

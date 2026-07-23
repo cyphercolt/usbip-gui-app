@@ -47,9 +47,21 @@ On each machine (build the web UI first on a dev box, or let the script build it
 sudo packaging/install-linux.sh      # installs usbip + a root systemd service on :4820
 ```
 
-The service runs as root, so `usbip` bind/attach need **no sudo password**. Then on any machine's
-fleet view, "+ Add a machine" and enter another node's URL (e.g. `http://192.168.2.50:4820`) — until
-Phase 2 wires up mDNS auto-discovery.
+The service runs as root, so `usbip` bind/attach need **no sudo password**. Machines auto-discover
+each other via mDNS — the manual "+ Add a machine" is only a fallback (other subnet / mDNS blocked).
+
+### Windows (untested on hardware yet)
+
+Needs upstream tools: **usbipd-win** (`winget install usbipd`, to share devices) and **usbip-win2**
+(client driver, to attach devices). Then, in an elevated PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\packaging\install-windows.ps1     # venv + firewall rule + SYSTEM scheduled task on :4820
+```
+
+Server side uses `usbipd list/bind/unbind`; client side reuses the same `usbip attach/detach/port`
+as Linux. Update later with `git pull` + re-run the script.
 
 ## API shape
 
@@ -72,5 +84,9 @@ Phase 2 wires up mDNS auto-discovery.
 - **Phase 2** (auto-discovery) — done: mDNS advertise+browse (async zeroconf) so machines appear
   automatically; fleet dedupes by node_id; "detach" now fully releases (detach dest + unbind source),
   and share/unshare is hidden from the user.
-- **Next: Phase 3** — Windows node (usbipd-win / usbip-win2) + Windows service. Then Phase 4 polish
-  (auto-reconnect, themes, notifications) and optional pairing/token lockdown.
+- **Phase 3** (Windows node) — code complete, **UNVERIFIED on hardware**: `core/usbip_windows.py`
+  (usbipd server + usbip-win2 client, ports the old app's syntax), platform facade dispatch,
+  `packaging/install-windows.ps1` (SYSTEM scheduled task + firewall). Parser unit-tested; a friend
+  will test the real flow later.
+- **Next: Phase 4** — auto-reconnect (devices come back after reboot/replug), themes, notifications,
+  optional pairing/token lockdown.
