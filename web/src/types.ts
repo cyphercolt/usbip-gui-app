@@ -22,11 +22,24 @@ export interface NodeInfo {
   host: string;
   port: number;
   reachable: boolean;
+  paired: boolean;
 }
 
 export interface CommandResponse {
   ok: boolean;
   message: string;
+}
+
+export interface PairedRef {
+  node_id: string;
+  name: string;
+}
+
+export interface SecurityState {
+  mode: "open" | "locked";
+  this_node: PairedRef;
+  trusted: PairedRef[];
+  pending: PairedRef[];
 }
 
 export interface NodeState {

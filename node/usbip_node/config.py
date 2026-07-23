@@ -68,14 +68,29 @@ def _load_or_create_node_id(directory: Path) -> str:
     return node_id
 
 
+def _load_or_create_node_key(directory: Path) -> str:
+    """This node's secret identity key. A peer stores it when pairing; we present it on every
+    node-to-node call so the peer can verify us (Syncthing-style device identity)."""
+    key_file = directory / "node_key"
+    if key_file.exists():
+        return key_file.read_text().strip()
+    key = uuid.uuid4().hex + uuid.uuid4().hex
+    try:
+        key_file.write_text(key)
+        os.chmod(key_file, 0o600)
+    except OSError:
+        pass
+    return key
+
+
 @dataclass
 class NodeConfig:
     node_id: str
+    node_key: str  # this node's secret identity (presented to peers)
     display_name: str
     host: str = "0.0.0.0"  # bind address
     port: int = DEFAULT_PORT
     advertise_host: str = "127.0.0.1"  # address peers/clients use to reach usbip + API
-    token: str | None = None  # optional shared secret gating command endpoints (Phase 2 -> pairing)
     os_name: str = field(default_factory=lambda: platform.system().lower())
 
     @classmethod
@@ -83,9 +98,9 @@ class NodeConfig:
         directory = state_dir()
         return cls(
             node_id=_load_or_create_node_id(directory),
+            node_key=_load_or_create_node_key(directory),
             display_name=os.environ.get("USBIP_NODE_NAME", socket.gethostname()),
             host=os.environ.get("USBIP_NODE_HOST", "0.0.0.0"),
             port=int(os.environ.get("USBIP_NODE_PORT", DEFAULT_PORT)),
             advertise_host=primary_ip(),
-            token=os.environ.get("USBIP_NODE_TOKEN") or None,
         )

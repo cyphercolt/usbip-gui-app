@@ -1,6 +1,6 @@
 // Same-origin API client. The page is served by a node; that node acts as the hub and forwards
 // per-node commands to the right peer, so the browser only ever talks to this one origin.
-import type { CommandResponse, NodeState } from "./types";
+import type { CommandResponse, NodeState, SecurityState } from "./types";
 
 async function post(path: string, body?: unknown): Promise<CommandResponse> {
   const res = await fetch(path, {
@@ -42,6 +42,24 @@ export const orchestrateAttach = (sourceNodeId: string, busid: string, destNodeI
     busid,
     dest_node_id: destNodeId,
   });
+
+// ---- security / pairing ----
+export async function getSecurity(): Promise<SecurityState> {
+  const res = await fetch("/api/security");
+  if (!res.ok) throw new Error(`security: ${res.status}`);
+  return res.json();
+}
+
+export const setSecurityMode = (mode: "open" | "locked") =>
+  post("/api/security/mode", { mode });
+export const pairInitiate = (peerNodeId: string) => post(`/api/pair/initiate/${peerNodeId}`);
+export const pairAccept = (nodeId: string) => post("/api/pair/accept", { node_id: nodeId });
+export const pairReject = (nodeId: string) => post("/api/pair/reject", { node_id: nodeId });
+
+export async function unpair(nodeId: string): Promise<CommandResponse> {
+  const res = await fetch(`/api/pair/${nodeId}`, { method: "DELETE" });
+  return res.json();
+}
 
 // A WebSocket to the serving node; we use any message as a "something changed, refetch fleet" nudge.
 export function watchChanges(onNudge: () => void, onStatus: (up: boolean) => void): () => void {

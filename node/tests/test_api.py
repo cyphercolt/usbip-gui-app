@@ -15,6 +15,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("USBIP_NODE_DISABLE_MDNS", "1")
     cfg = NodeConfig(
         node_id="abc123",
+        node_key="mykey",
         display_name="testnode",
         port=4820,
         advertise_host="10.0.0.9",
@@ -79,21 +80,45 @@ def test_release_unknown_node_404(client):
     assert r.status_code == 404
 
 
-def test_token_gate(tmp_path, monkeypatch):
-    monkeypatch.setenv("USBIP_NODE_STATE_DIR", str(tmp_path))
-    monkeypatch.setenv("USBIP_NODE_DISABLE_MDNS", "1")
-    cfg = NodeConfig(node_id="tok", display_name="t", token="s3cret", os_name="linux")
-    c = TestClient(create_app(cfg))
-    # command endpoints require the token now
-    assert c.post("/api/local/bind", json={"busid": "2-1"}).status_code == 401
-    ok = c.post(
-        "/api/local/bind",
-        json={"busid": "2-1"},
-        headers={"Authorization": "Bearer s3cret"},
+def test_security_defaults_open(client):
+    body = client.get("/api/security").json()
+    assert body["mode"] == "open"
+    assert body["this_node"]["node_id"] == "abc123"
+    # open mode: state + commands need no pairing
+    assert client.get("/api/state").status_code == 200
+    assert client.post("/api/local/bind", json={"busid": "2-1"}).status_code == 200
+
+
+def test_locked_blocks_unpaired(client):
+    client.post("/api/security/mode", json={"mode": "locked"})
+    # node-to-node endpoints now require a paired identity
+    assert client.get("/api/state").status_code == 401
+    assert client.post("/api/local/bind", json={"busid": "2-1"}).status_code == 401
+
+
+def test_pairing_flow_locked(client):
+    client.post("/api/security/mode", json={"mode": "locked"})
+    # a peer requests pairing -> shows as pending
+    req = client.post(
+        "/api/pair/request",
+        json={"node_id": "peerX", "display_name": "peer", "key": "pk",
+              "host": "127.0.0.1", "port": 1},
     )
+    assert req.json()["message"] == "pending"
+    assert any(p["node_id"] == "peerX" for p in client.get("/api/security").json()["pending"])
+
+    # user approves it (callback to the peer will fail silently — no server on :1)
+    client.post("/api/pair/accept", json={"node_id": "peerX"})
+    sec = client.get("/api/security").json()
+    assert any(t["node_id"] == "peerX" for t in sec["trusted"])
+    assert sec["pending"] == []
+
+    # now the paired peer can call gated endpoints with its identity
+    ok = client.get("/api/state", headers={"X-Node-Id": "peerX", "X-Node-Key": "pk"})
     assert ok.status_code == 200
-    # read-only endpoints stay open
-    assert c.get("/api/state").status_code == 200
+    # wrong key still rejected
+    bad = client.get("/api/state", headers={"X-Node-Id": "peerX", "X-Node-Key": "nope"})
+    assert bad.status_code == 401
 
 
 def test_busid_validation():

@@ -74,6 +74,36 @@ as Linux. Update later with `git pull` + re-run the script.
   source, so the device is immediately free to send elsewhere.
 - `GET/POST/DELETE /api/peers` — manual peer registry (fallback; mDNS auto-discovers peers).
 - `WS /ws` — live state push for the connected node (UI uses it as a refetch nudge).
+- Pairing (Syncthing-style): `GET /api/identity`, `GET /api/security`, `POST /api/security/mode`,
+  `POST /api/pair/initiate/{peer_node_id}`, `POST /api/pair/request|confirm` (node↔node),
+  `POST /api/pair/accept|reject`, `DELETE /api/pair/{node_id}`.
+
+## Security model (pairing)
+
+Each node has a persistent `node_id` + secret `node_key` (in the state dir). Two modes:
+
+- **open** (default): any node on the LAN is trusted — nothing to pair. Existing fleets keep working.
+- **locked**: a peer must be paired before it can see devices or issue commands. Unpaired discovered
+  machines show as "pending" (🔒) in the fleet with a **Pair** button. Pairing is mutual-consent:
+  machine A taps *Pair*, machine B sees a request and taps *Accept* (🔒 badge shows a count). Node↔node
+  calls carry `X-Node-Id`/`X-Node-Key`; locked-mode `/api/state` and `/api/local/*` reject unpaired
+  callers. Lock down every machine for it to matter (browser→node is still open on the LAN — a synced
+  web login is Phase 5).
+
+### Reset (to re-test pairing from scratch)
+
+Wipes a node's identity + trust + known peers (regenerates a fresh `node_id`/`node_key`). Run on each
+machine you want to reset:
+
+```bash
+sudo systemctl stop usbip-node
+sudo rm -rf /var/lib/usbip-node      # node_id, node_key, trust.json, peers.json
+sudo systemctl start usbip-node
+```
+
+After that, machines rediscover each other via mDNS and (in locked mode) show as pending until you
+re-pair. To clear *only* pairings but keep identity: `sudo rm /var/lib/usbip-node/trust.json` then
+restart (note: peers that trusted the old key must unpair/re-pair).
 
 ## Status
 
@@ -88,5 +118,9 @@ as Linux. Update later with `git pull` + re-run the script.
   (usbipd server + usbip-win2 client, ports the old app's syntax), platform facade dispatch,
   `packaging/install-windows.ps1` (SYSTEM scheduled task + firewall). Parser unit-tested; a friend
   will test the real flow later.
-- **Next: Phase 4** — auto-reconnect (devices come back after reboot/replug), themes, notifications,
-  optional pairing/token lockdown.
+- **Phase 4 (in progress):**
+  - ✅ Security lockdown + Syncthing-style pairing (open/locked modes, mutual approve, live-verified
+    across two nodes). Pending-request toast + 🔒 badge done.
+  - ⬜ Auto-reconnect (re-attach after reboot/replug/blip), themes, richer status/notifications.
+- **Phase 5** — team-synced web-UI login + optional TOTP 2FA (browser→node auth, propagated over the
+  pairing mesh).

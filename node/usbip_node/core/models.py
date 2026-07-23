@@ -29,6 +29,7 @@ class NodeInfo(BaseModel):
     host: str = "127.0.0.1"  # address for usbip (port 3240) + API
     port: int = 4820  # API port
     reachable: bool = True
+    paired: bool = True  # in locked mode, false = discovered but not yet approved
 
 
 class NodeState(BaseModel):
@@ -75,3 +76,40 @@ class ReleaseRequest(BaseModel):
 
 class PeerRef(BaseModel):
     url: str  # base URL, e.g. http://192.168.2.50:4820
+
+
+# ---- pairing / security ----
+class Identity(BaseModel):
+    node_id: str
+    display_name: str
+    os_name: str
+
+
+class PairMessage(BaseModel):
+    """Sent node->node during pairing; carries the sender's identity + secret key + call-back addr."""
+
+    node_id: str
+    display_name: str
+    key: str
+    host: str = ""
+    port: int = 0
+
+
+class PairedRef(BaseModel):
+    node_id: str
+    name: str
+
+
+class SecurityState(BaseModel):
+    mode: str  # "open" | "locked"
+    this_node: PairedRef
+    trusted: list[PairedRef] = []
+    pending: list[PairedRef] = []  # incoming requests awaiting approval
+
+
+class ModeRequest(BaseModel):
+    mode: str
+
+
+class NodeIdRequest(BaseModel):
+    node_id: str

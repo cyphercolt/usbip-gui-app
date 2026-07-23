@@ -16,6 +16,7 @@ from .config import NodeConfig
 from .discovery.mdns import Discovery
 from .events import StateBus
 from .peers import PeerRegistry
+from .trust import TrustStore
 
 # Location of the built web app (Vite outputs to web/dist). Overridable for dev.
 _WEB_DIST_CANDIDATES = [
@@ -38,6 +39,7 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     bus = StateBus()
     registry = PeerRegistry()
     discovery = Discovery(cfg)
+    trust = TrustStore()
 
     def peer_urls() -> list[str]:
         """Manual registry + mDNS-discovered peers, de-duplicated (fleet dedupes by node_id too)."""
@@ -55,7 +57,8 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     app.state.bus = bus
     app.state.peers = registry
     app.state.discovery = discovery
-    app.include_router(build_router(cfg, bus, registry, peer_urls))
+    app.state.trust = trust
+    app.include_router(build_router(cfg, bus, registry, peer_urls, trust))
 
     web_dist = _find_web_dist()
     if web_dist is not None:

@@ -1,7 +1,35 @@
 import { useState } from "react";
-import { addPeer } from "./api";
+import { addPeer, pairInitiate } from "./api";
 import { osBadge } from "./helpers";
 import type { NodeState } from "./types";
+
+function PairCard({
+  node,
+  onPair,
+}: {
+  node: NodeState;
+  onPair: (nodeId: string) => void;
+}) {
+  return (
+    <div className="rounded-2xl p-4 ring-1 ring-amber-400/20 bg-amber-500/5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">{osBadge(node.info.os_name)}</span>
+          <div>
+            <div className="font-semibold leading-tight">{node.info.display_name}</div>
+            <div className="text-xs text-amber-300/70">🔒 not paired</div>
+          </div>
+        </div>
+      </div>
+      <button
+        onClick={() => onPair(node.info.node_id)}
+        className="mt-3 w-full rounded-lg bg-amber-500/80 hover:bg-amber-500 px-3 py-2 text-sm font-medium"
+      >
+        Pair with this machine
+      </button>
+    </div>
+  );
+}
 
 function Card({ node, onOpen }: { node: NodeState; onOpen: () => void }) {
   const reachable = node.info.reachable;
@@ -61,11 +89,21 @@ export default function FleetView({
     }
   };
 
+  const pair = async (nodeId: string) => {
+    const res = await pairInitiate(nodeId);
+    notify(res.ok ? "Pairing request sent — approve it on that machine" : res.message, res.ok);
+    onChanged();
+  };
+
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      {fleet.map((n) => (
-        <Card key={n.info.node_id} node={n} onOpen={() => onOpen(n.info.node_id)} />
-      ))}
+      {fleet.map((n) =>
+        n.info.paired ? (
+          <Card key={n.info.node_id} node={n} onOpen={() => onOpen(n.info.node_id)} />
+        ) : (
+          <PairCard key={n.info.node_id} node={n} onPair={pair} />
+        ),
+      )}
 
       {adding ? (
         <div className="rounded-2xl p-4 ring-1 ring-white/10 bg-white/5 sm:col-span-2">
