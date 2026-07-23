@@ -52,7 +52,8 @@ echo "==> Installing systemd service"
 sed "s/USBIP_NODE_PORT=4820/USBIP_NODE_PORT=$PORT/" "$REPO_DIR/packaging/usbip-node.service" \
   > /etc/systemd/system/usbip-node.service
 systemctl daemon-reload
-systemctl enable --now usbip-node.service
+systemctl enable usbip-node.service
+systemctl restart usbip-node.service   # restart so re-running this script also UPDATES a live node
 
 IP=$(hostname -I | awk '{print $1}')
 echo
