@@ -1,0 +1,28 @@
+[project]
+name = "usbip-node"
+version = "0.1.0"
+description = "One symmetric LAN service (agent + hub + webserver) for USB/IP fleet control"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "zeroconf>=0.132",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+usbip-node = "usbip_node.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["usbip_node*"]

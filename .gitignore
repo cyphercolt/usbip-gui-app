@@ -85,3 +85,25 @@ coverage.xml
 *.pid
 *.sock
 usbip-gui-app.code-workspace
+
+# --- v3 rewrite: node service + web app ---
+# Build/deps we don't commit
+web/node_modules/
+web/dist/
+node/.venv/
+node/build/
+node/*.egg-info/
+# Local node runtime state (identity + trust store)
+.usbip-node-state/
+node/.usbip-node-state/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Re-include files the broad rules above would wrongly drop (but not their build artifacts)
+!node/tests/
+!node/tests/*.py
+!web/package.json
+!web/package-lock.json
+!web/tsconfig.json
+!web/tsconfig.node.json
