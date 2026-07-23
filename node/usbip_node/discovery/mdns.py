@@ -31,6 +31,9 @@ class Discovery:
         self._store: dict[str, str] = {}
 
     async def start(self) -> None:
+        # Listen on all interfaces (binding to one broke same-host discovery via multicast loopback).
+        # Peer flapping from multi-NIC mDNS churn is handled by keeping discovered URLs sticky
+        # (see _on_change) rather than by restricting interfaces.
         self._azc = AsyncZeroconf()
         self._info = ServiceInfo(
             SERVICE_TYPE,
@@ -45,8 +48,11 @@ class Discovery:
         )
 
     def _on_change(self, zeroconf, service_type, name, state_change) -> None:
+        # Intentionally ignore Removed: mDNS TTL churn (esp. with multiple NICs) fires spurious
+        # removes for peers that are still up. We keep discovered URLs "sticky" and let actual HTTP
+        # reachability in gather_fleet decide what's shown — a truly-offline peer just fails to fetch
+        # and doesn't appear, with no flapping.
         if state_change is ServiceStateChange.Removed:
-            self._store.pop(name, None)
             return
         # Added / Updated: resolve asynchronously so we never block the event loop.
         asyncio.ensure_future(self._resolve(service_type, name))

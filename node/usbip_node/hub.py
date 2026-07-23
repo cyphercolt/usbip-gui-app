@@ -11,13 +11,14 @@ that peer as "pending" (discovered but not yet approved).
 
 from __future__ import annotations
 
+import asyncio
 from urllib.parse import urlparse
 
 import httpx
 
 from .core.models import CommandResponse, NodeInfo, NodeState
 
-_TIMEOUT = httpx.Timeout(8.0)
+_TIMEOUT = httpx.Timeout(4.0)  # short: peers are on the LAN; don't let one slow node stall the fleet
 
 
 def identity_headers(node_id: str, node_key: str) -> dict[str, str]:
@@ -99,15 +100,18 @@ async def gather_fleet(
     id_to_url: dict[str, str] = {}
     seen = {self_state.info.node_id}
     async with httpx.AsyncClient() as client:
-        for url in peer_urls:
-            state = await fetch_peer_state(client, url, node_id, node_key)
-            if state is None:
-                continue
-            nid = state.info.node_id
-            if nid in seen:
-                id_to_url.setdefault(nid, url)
-                continue
-            seen.add(nid)
-            id_to_url[nid] = url
-            fleet.append(state)
+        # Fetch all peers concurrently so a slow/dead one never blocks the others.
+        results = await asyncio.gather(
+            *(fetch_peer_state(client, url, node_id, node_key) for url in peer_urls)
+        )
+    for url, state in zip(peer_urls, results):
+        if state is None:
+            continue
+        nid = state.info.node_id
+        if nid in seen:
+            id_to_url.setdefault(nid, url)
+            continue
+        seen.add(nid)
+        id_to_url[nid] = url
+        fleet.append(state)
     return fleet, id_to_url
