@@ -19,6 +19,7 @@ class AttachedDevice(BaseModel):
     busid: str
     description: str
     remote_host: str | None = None
+    auto: bool = False  # auto-reconnect armed for this device on this machine
 
 
 class NodeInfo(BaseModel):
@@ -64,6 +65,13 @@ class AttachRequest(BaseModel):
 
 class DetachRequest(BaseModel):
     port: str
+
+
+class AutoReconnectRequest(BaseModel):
+    remote_host: str
+    busid: str
+    description: str = ""
+    enabled: bool
 
 
 class ReleaseRequest(BaseModel):

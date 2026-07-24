@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { orchestrateAttach, release } from "./api";
+import { orchestrateAttach, release, setAutoReconnect } from "./api";
 import { osBadge } from "./helpers";
 import type { NodeState } from "./types";
 
@@ -190,6 +190,14 @@ export default function MachineView({
     onChanged();
   };
 
+  const toggleAuto = async (remoteHost: string, busid: string, description: string, on: boolean) => {
+    setBusy(true);
+    const res = await setAutoReconnect(node.info.node_id, remoteHost, busid, description, on);
+    setBusy(false);
+    notify(on ? "auto-reconnect on" : "auto-reconnect off", res.ok);
+    onChanged();
+  };
+
   return (
     <div>
       <div className="flex items-center gap-3 mb-4">
@@ -251,6 +259,20 @@ export default function MachineView({
                   {a.description}
                   {a.remote_host && <span className="text-white/40"> · from {a.remote_host}</span>}
                 </span>
+                {a.remote_host && (
+                  <button
+                    disabled={busy}
+                    onClick={() => toggleAuto(a.remote_host!, a.busid, a.description, !a.auto)}
+                    title="Auto-reconnect: re-attach this device automatically if it drops"
+                    className={`rounded-lg px-3 py-1.5 text-xs font-medium ring-1 disabled:opacity-40 ${
+                      a.auto
+                        ? "bg-emerald-500/80 ring-emerald-400/30 text-white"
+                        : "bg-white/10 ring-white/10 text-white/60 hover:bg-white/15"
+                    }`}
+                  >
+                    🔁 Auto {a.auto ? "on" : "off"}
+                  </button>
+                )}
                 <button
                   disabled={busy}
                   onClick={() => doDetach(a.port)}

@@ -12,6 +12,7 @@ export interface AttachedDevice {
   busid: string;
   description: string;
   remote_host: string | null;
+  auto: boolean;
 }
 
 export interface NodeInfo {

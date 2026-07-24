@@ -18,10 +18,13 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
 
 from .. import __version__
+from ..autoreconnect import AutoReconnectStore
 from ..config import NodeConfig
 from ..core import local
+from ..core.proc import CommandResult
 from ..core.models import (
     AttachRequest,
+    AutoReconnectRequest,
     BusidRequest,
     CommandResponse,
     DetachRequest,
@@ -62,6 +65,7 @@ def build_router(
     registry: PeerRegistry,
     peer_urls: Callable[[], list[str]],
     trust: TrustStore,
+    auto_store: AutoReconnectStore,
 ) -> APIRouter:
     r = APIRouter()
 
@@ -88,10 +92,14 @@ def build_router(
         )
 
     def local_state() -> NodeState:
+        attached = local.list_attached()
+        for a in attached:
+            if a.remote_host:
+                a.auto = auto_store.contains(a.remote_host, a.busid)
         return NodeState(
             info=node_info(),
             shareable=local.list_shareable(),
-            attached=local.list_attached(),
+            attached=attached,
         )
 
     def our_pair_msg() -> dict:
@@ -159,9 +167,22 @@ def build_router(
 
     @r.post("/api/local/detach", response_model=CommandResponse)
     def _detach(req: DetachRequest, _: None = Depends(node_auth)) -> CommandResponse:
+        # A manual detach disarms auto-reconnect for that device, else the loop would re-grab it.
+        for a in local.list_attached():
+            if a.port == req.port and a.remote_host:
+                auto_store.remove(a.remote_host, a.busid)
         resp = _to_response(local.detach(req.port))
         bus.publish()
         return resp
+
+    @r.post("/api/local/autoreconnect", response_model=CommandResponse)
+    def _local_autoreconnect(req: AutoReconnectRequest, _: None = Depends(node_auth)) -> CommandResponse:
+        if req.enabled:
+            auto_store.add(req.remote_host, req.busid, req.description)
+        else:
+            auto_store.remove(req.remote_host, req.busid)
+        bus.publish()
+        return CommandResponse(ok=True, message="auto-reconnect " + ("on" if req.enabled else "off"))
 
     # ---- hub layer (browser-facing) ----
     _recent: dict[str, tuple[float, NodeState]] = {}  # smooths transient blips in the fleet display
@@ -291,6 +312,17 @@ def build_router(
     async def _node_detach(node_id: str, req: DetachRequest) -> CommandResponse:
         return await _run_on(node_id, lambda: local.detach(req.port), "/api/local/detach",
                              {"port": req.port})
+
+    @r.post("/api/node/{node_id}/autoreconnect", response_model=CommandResponse)
+    async def _node_autoreconnect(node_id: str, req: AutoReconnectRequest) -> CommandResponse:
+        def _local():
+            if req.enabled:
+                auto_store.add(req.remote_host, req.busid, req.description)
+            else:
+                auto_store.remove(req.remote_host, req.busid)
+            return CommandResult(True, "", "", 0)
+
+        return await _run_on(node_id, _local, "/api/local/autoreconnect", req.model_dump())
 
     # ---- security / pairing ----
     @r.get("/api/security", response_model=SecurityState)

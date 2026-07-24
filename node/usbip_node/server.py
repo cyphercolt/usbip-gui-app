@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .api.routes import build_router
+from .autoreconnect import AutoReconnectStore, run_loop
 from .config import NodeConfig
 from .discovery.mdns import Discovery
 from .events import StateBus
@@ -40,6 +42,7 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     registry = PeerRegistry()
     discovery = Discovery(cfg)
     trust = TrustStore()
+    autoreconnect = AutoReconnectStore()
 
     def peer_urls() -> list[str]:
         """Manual registry + mDNS-discovered peers, de-duplicated (fleet dedupes by node_id too)."""
@@ -49,7 +52,9 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     async def lifespan(_: FastAPI):
         if os.environ.get("USBIP_NODE_DISABLE_MDNS") != "1":
             await discovery.start_safe()
+        task = asyncio.create_task(run_loop(cfg, autoreconnect, bus))
         yield
+        task.cancel()
         await discovery.close()
 
     app = FastAPI(title="usbip-node", version=__version__, lifespan=lifespan)
@@ -58,7 +63,8 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     app.state.peers = registry
     app.state.discovery = discovery
     app.state.trust = trust
-    app.include_router(build_router(cfg, bus, registry, peer_urls, trust))
+    app.state.autoreconnect = autoreconnect
+    app.include_router(build_router(cfg, bus, registry, peer_urls, trust, autoreconnect))
 
     web_dist = _find_web_dist()
     if web_dist is not None:

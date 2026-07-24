@@ -83,6 +83,22 @@ def test_release_unknown_node_404(client):
     assert r.status_code == 404
 
 
+def test_autoreconnect_arm_disarm(client):
+    client.post("/api/security/mode", json={"mode": "open"})
+    store = client.app.state.autoreconnect
+    r = client.post(
+        "/api/local/autoreconnect",
+        json={"remote_host": "192.168.2.144", "busid": "1-1.2", "enabled": True},
+    )
+    assert r.json()["ok"] is True
+    assert store.contains("192.168.2.144", "1-1.2")
+    client.post(
+        "/api/local/autoreconnect",
+        json={"remote_host": "192.168.2.144", "busid": "1-1.2", "enabled": False},
+    )
+    assert not store.contains("192.168.2.144", "1-1.2")
+
+
 def test_security_defaults_locked(client):
     body = client.get("/api/security").json()
     assert body["mode"] == "locked"  # secure by default

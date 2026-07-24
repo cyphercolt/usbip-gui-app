@@ -36,6 +36,21 @@ export async function removePeer(url: string): Promise<CommandResponse> {
 export const release = (destNodeId: string, port: string) =>
   post("/api/detach", { dest_node_id: destNodeId, port });
 
+// Arm/disarm auto-reconnect for a device on the node that currently holds it.
+export const setAutoReconnect = (
+  nodeId: string,
+  remoteHost: string,
+  busid: string,
+  description: string,
+  enabled: boolean,
+) =>
+  post(`/api/node/${nodeId}/autoreconnect`, {
+    remote_host: remoteHost,
+    busid,
+    description,
+    enabled,
+  });
+
 export const orchestrateAttach = (sourceNodeId: string, busid: string, destNodeId: string) =>
   post("/api/attach", {
     source_node_id: sourceNodeId,
