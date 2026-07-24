@@ -1,3 +1,4 @@
+import { QRCodeSVG } from "qrcode.react";
 import { useState } from "react";
 import {
   disableAuth,
@@ -74,13 +75,23 @@ function AccessSection({
 
       {secret && (
         <div className="mt-3 rounded-xl bg-emerald-500/10 ring-1 ring-emerald-400/20 p-3">
-          <p className="text-xs text-emerald-200">
-            Add this to your authenticator app (shown once):
+          <p className="text-xs text-emerald-200 mb-3">
+            Scan with your authenticator app (shown once):
           </p>
-          <code className="block mt-1 text-sm break-all text-emerald-100">{secret.secret}</code>
-          <a href={secret.uri} className="text-xs text-emerald-300 underline break-all">
-            open in authenticator
-          </a>
+          <div className="flex flex-col items-center gap-3">
+            <div className="rounded-lg bg-white p-3">
+              <QRCodeSVG value={secret.uri} size={172} />
+            </div>
+            <details className="w-full">
+              <summary className="text-xs text-emerald-300 cursor-pointer">
+                or enter the code manually
+              </summary>
+              <code className="block mt-1 text-sm break-all text-emerald-100">{secret.secret}</code>
+              <a href={secret.uri} className="text-xs text-emerald-300 underline break-all">
+                open in authenticator
+              </a>
+            </details>
+          </div>
         </div>
       )}
 
