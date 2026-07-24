@@ -70,7 +70,6 @@ export default function App() {
   }, [refresh]);
 
   const selectedNode = selected ? fleet.find((n) => n.info.node_id === selected) : undefined;
-  const locked = security?.mode === "locked";
   const pending = security?.pending.length ?? 0;
 
   return (
@@ -90,9 +89,9 @@ export default function App() {
               setShowSecurity((v) => !v);
             }}
             className="relative rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 transition px-3 py-2 text-sm font-medium ring-1 ring-white/10"
-            title="Security & pairing"
+            title="Settings"
           >
-            {locked ? "🔒" : "🔓"}
+            ⚙️
             {pending > 0 && (
               <span className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1 rounded-full bg-amber-500 text-[11px] font-bold grid place-items-center">
                 {pending}
