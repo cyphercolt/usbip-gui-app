@@ -11,6 +11,7 @@ Endpoint layers:
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Callable
 
 import httpx
@@ -45,6 +46,14 @@ from ..trust import LOCKED, OPEN, TrustStore
 def _to_response(result) -> CommandResponse:
     msg = (result.stderr or result.stdout or "").strip()
     return CommandResponse(ok=result.ok, message=msg)
+
+
+def _bind_ok(resp: CommandResponse) -> bool:
+    """Treat an already-shared device as a successful bind — it's ready to attach either way."""
+    if resp.ok:
+        return True
+    m = resp.message.lower()
+    return "already bound" in m or "already shared" in m
 
 
 def build_router(
@@ -155,9 +164,21 @@ def build_router(
         return resp
 
     # ---- hub layer (browser-facing) ----
+    _recent: dict[str, tuple[float, NodeState]] = {}  # smooths transient blips in the fleet display
+
     @r.get("/api/fleet", response_model=list[NodeState])
     async def _fleet() -> list[NodeState]:
         fleet, _ = await _fleet_now()
+        now = time.monotonic()
+        present = {n.info.node_id for n in fleet}
+        for n in fleet:
+            _recent[n.info.node_id] = (now, n)
+        # Re-add machines seen in the last 12s that missed this round, so they don't flicker out.
+        for nid, (ts, n) in list(_recent.items()):
+            if nid not in present and now - ts < 12:
+                fleet.append(n)
+            elif now - ts >= 60:
+                _recent.pop(nid, None)
         return fleet
 
     @r.post("/api/attach", response_model=CommandResponse)
@@ -177,7 +198,7 @@ def build_router(
                     client, id_to_url[source.info.node_id], "/api/local/bind",
                     {"busid": req.busid}, cfg.node_id, cfg.node_key,
                 )
-            if not bind_res.ok:
+            if not _bind_ok(bind_res):
                 return CommandResponse(ok=False, message=f"bind on source failed: {bind_res.message}")
 
             if dest.info.node_id == cfg.node_id:
@@ -213,18 +234,25 @@ def build_router(
                     client, id_to_url[dest.info.node_id], "/api/local/detach",
                     {"port": req.port}, cfg.node_id, cfg.node_key,
                 )
+            # Always unbind on the source too: it frees the device to be sent elsewhere AND lets it
+            # work again on the machine it's physically plugged into. Do this by the source's address
+            # so it works even if the source flapped out of the current fleet snapshot.
             unbound = ""
             if attached and attached.remote_host and attached.busid:
                 source = next((n for n in fleet if n.info.host == attached.remote_host), None)
-                if source is not None:
-                    if source.info.node_id == cfg.node_id:
-                        u = _to_response(local.unbind(attached.busid))
-                    else:
-                        u = await post_command(
-                            client, id_to_url[source.info.node_id], "/api/local/unbind",
-                            {"busid": attached.busid}, cfg.node_id, cfg.node_key,
-                        )
-                    unbound = " and freed on source" if u.ok else " (source still bound)"
+                if source is not None and source.info.node_id == cfg.node_id:
+                    u = _to_response(local.unbind(attached.busid))
+                else:
+                    src_url = (
+                        id_to_url.get(source.info.node_id)
+                        if source is not None
+                        else f"http://{attached.remote_host}:{cfg.port}"
+                    )
+                    u = await post_command(
+                        client, src_url, "/api/local/unbind",
+                        {"busid": attached.busid}, cfg.node_id, cfg.node_key,
+                    )
+                unbound = " and freed on source" if u.ok else " (source still bound)"
 
         bus.publish()
         if not detach_res.ok:
