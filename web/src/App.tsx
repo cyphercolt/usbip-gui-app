@@ -22,6 +22,7 @@ export default function App() {
   const [isFs, toggleFs] = useFullscreen();
   const toastId = useRef(0);
   const prevPending = useRef(0);
+  const prevReach = useRef<Map<string, { name: string; reachable: boolean }> | null>(null);
 
   const notify = useCallback((msg: string, ok: boolean) => {
     const id = ++toastId.current;
@@ -31,7 +32,20 @@ export default function App() {
 
   const refresh = useCallback(() => {
     getFleet()
-      .then(setFleet)
+      .then((f) => {
+        setFleet(f);
+        // machine online/offline notifications (skip the very first load)
+        const cur = new Map(f.map((n) => [n.info.node_id, { name: n.info.display_name, reachable: n.info.reachable }]));
+        const prev = prevReach.current;
+        if (prev) {
+          for (const [id, { name, reachable }] of cur) {
+            const was = prev.get(id);
+            if (was && was.reachable && !reachable) notify(`${name} went offline`, false);
+            else if (was && !was.reachable && reachable) notify(`${name} came online`, true);
+          }
+        }
+        prevReach.current = cur;
+      })
       .catch(() => {});
     getSecurity()
       .then((s) => {

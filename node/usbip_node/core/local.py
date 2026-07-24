@@ -19,25 +19,40 @@ from .models import AttachedDevice, Device
 
 _IS_WINDOWS = platform.system().lower().startswith("win")
 
-_CACHE_TTL = 1.5  # seconds
-_lock = threading.Lock()
+# TTL must be >= the UI poll interval or every poll is a cache miss and re-runs usbip. On a slow
+# Pi that caused fetch timeouts and made the node flap in/out of the fleet.
+_CACHE_TTL = 5.0  # seconds
 _cache: dict[str, tuple[float, object]] = {}
+_cache_lock = threading.Lock()
+_key_locks: dict[str, threading.Lock] = {}
+
+
+def _key_lock(key: str) -> threading.Lock:
+    with _cache_lock:
+        return _key_locks.setdefault(key, threading.Lock())
 
 
 def _cached(key: str, producer):
     now = time.monotonic()
-    with _lock:
+    with _cache_lock:
         hit = _cache.get(key)
         if hit and hit[0] > now:
             return hit[1]
-    value = producer()  # run outside the lock so a slow usbip call doesn't serialize everyone
-    with _lock:
-        _cache[key] = (now + _CACHE_TTL, value)
-    return value
+    # Single-flight: only one thread runs the (slow) usbip call; concurrent callers wait then reuse.
+    with _key_lock(key):
+        now = time.monotonic()
+        with _cache_lock:
+            hit = _cache.get(key)
+            if hit and hit[0] > now:
+                return hit[1]
+        value = producer()
+        with _cache_lock:
+            _cache[key] = (now + _CACHE_TTL, value)
+        return value
 
 
 def _invalidate() -> None:
-    with _lock:
+    with _cache_lock:
         _cache.clear()
 
 

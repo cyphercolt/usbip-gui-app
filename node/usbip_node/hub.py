@@ -18,7 +18,7 @@ import httpx
 
 from .core.models import CommandResponse, NodeInfo, NodeState
 
-_TIMEOUT = httpx.Timeout(4.0)  # short: peers are on the LAN; don't let one slow node stall the fleet
+_TIMEOUT = httpx.Timeout(6.0)  # LAN peers; generous enough for a slow Pi, short enough to stay snappy
 
 
 def identity_headers(node_id: str, node_key: str) -> dict[str, str]:

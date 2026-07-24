@@ -1,7 +1,38 @@
+import { useState } from "react";
 import { pairAccept, pairReject, setSecurityMode, unpair } from "./api";
+import { loadThemeId, saveTheme, THEMES } from "./themes";
 import type { SecurityState } from "./types";
 
 type Notify = (msg: string, ok: boolean) => void;
+
+function Appearance() {
+  const [theme, setThemeId] = useState(loadThemeId());
+  return (
+    <section className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 mb-4">
+      <h3 className="text-sm font-semibold text-white/70 mb-3">Appearance</h3>
+      <div className="flex flex-wrap gap-2">
+        {THEMES.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => {
+              saveTheme(t.id);
+              setThemeId(t.id);
+            }}
+            className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm ring-1 transition ${
+              theme === t.id ? "ring-white/50 bg-white/10" : "ring-white/10 hover:bg-white/5"
+            }`}
+          >
+            <span
+              className="h-4 w-4 rounded-full ring-1 ring-white/20"
+              style={{ background: t.swatch, boxShadow: `inset 0 0 0 2px ${t.accent}` }}
+            />
+            {t.name}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 export default function SecurityPanel({
   security,
@@ -31,8 +62,10 @@ export default function SecurityPanel({
         >
           ← Fleet
         </button>
-        <h2 className="text-lg font-semibold">Security &amp; pairing</h2>
+        <h2 className="text-lg font-semibold">Settings</h2>
       </div>
+
+      <Appearance />
 
       {/* mode */}
       <section className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 mb-4">

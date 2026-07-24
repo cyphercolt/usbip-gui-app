@@ -48,7 +48,7 @@ function Card({ node, onOpen }: { node: NodeState; onOpen: () => void }) {
           <span className="text-xl">{osBadge(node.info.os_name)}</span>
           <div>
             <div className="font-semibold leading-tight">{node.info.display_name}</div>
-            <div className="text-xs text-white/40">{node.info.host}</div>
+            <div className="text-xs text-white/40">{reachable ? node.info.host : "offline"}</div>
           </div>
         </div>
         <span className={`h-2.5 w-2.5 rounded-full ${reachable ? "bg-emerald-400" : "bg-white/20"}`} />

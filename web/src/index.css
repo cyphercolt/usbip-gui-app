@@ -2,6 +2,8 @@
 
 :root {
   color-scheme: dark;
+  --bg: radial-gradient(1200px 800px at 70% -10%, #16204a 0%, #0b1020 55%);
+  --accent: #38bdf8;
 }
 
 html,
@@ -12,7 +14,7 @@ body,
 
 body {
   margin: 0;
-  background: #0b1020;
+  background: var(--bg) fixed;
   color: #e5e9f0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;

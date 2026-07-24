@@ -127,6 +127,9 @@ restart (note: peers that trusted the old key must unpair/re-pair).
   - ✅ Auto-reconnect: per-device 🔁 toggle in a machine's "Attached devices" section; a background
     loop (`autoreconnect.py`, 5s) re-binds the source + re-attaches any armed device that dropped.
     Manual detach disarms it. `POST /api/node/{id}/autoreconnect {remote_host,busid,enabled}`.
-  - ⬜ Themes, richer notifications.
-- **Phase 5** — team-synced web-UI login + optional TOTP 2FA (browser→node auth, propagated over the
-  pairing mesh).
+  - ✅ Themes: 6 presets (`web/src/themes.ts`) via CSS vars, picker in Settings, persisted.
+  - ✅ Notifications: machine online/offline toasts; offline machines stay listed (reachable=false,
+    60s) instead of vanishing. Device-state cache TTL raised to 5s w/ single-flight so slow nodes
+    (Pi) stop flapping.
+- **Phase 5 (next)** — team-synced web-UI login + optional TOTP 2FA (browser→node auth, propagated
+  over the pairing mesh).

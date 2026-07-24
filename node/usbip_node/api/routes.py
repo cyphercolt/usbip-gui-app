@@ -194,11 +194,16 @@ def build_router(
         present = {n.info.node_id for n in fleet}
         for n in fleet:
             _recent[n.info.node_id] = (now, n)
-        # Re-add machines seen in the last 12s that missed this round, so they don't flicker out.
+        # Keep recently-seen machines in the list as "offline" (reachable=false) for up to 60s
+        # instead of vanishing — no flicker, and the UI can show/notify offline state.
         for nid, (ts, n) in list(_recent.items()):
-            if nid not in present and now - ts < 12:
-                fleet.append(n)
-            elif now - ts >= 60:
+            if nid in present:
+                continue
+            if now - ts < 60:
+                offline = n.model_copy(deep=True)
+                offline.info.reachable = False
+                fleet.append(offline)
+            else:
                 _recent.pop(nid, None)
         return fleet
 
