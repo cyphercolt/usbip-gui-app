@@ -15,7 +15,16 @@ import time
 from typing import Callable
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+    WebSocket,
+    WebSocketDisconnect,
+)
 
 from .. import __version__
 from ..autoreconnect import AutoReconnectStore
@@ -24,11 +33,14 @@ from ..core import local
 from ..core.proc import CommandResult
 from ..core.models import (
     AttachRequest,
+    AuthConfigMessage,
+    AuthStatus,
     AutoReconnectRequest,
     BusidRequest,
     CommandResponse,
     DetachRequest,
     Identity,
+    LoginRequest,
     ModeRequest,
     NodeIdRequest,
     NodeInfo,
@@ -39,11 +51,14 @@ from ..core.models import (
     PeerRef,
     ReleaseRequest,
     SecurityState,
+    SetAuthRequest,
+    SetAuthResponse,
 )
 from ..events import StateBus
-from ..hub import gather_fleet, post_command
+from ..hub import gather_fleet, identity_headers, post_command
 from ..peers import PeerRegistry
 from ..trust import LOCKED, OPEN, TrustStore
+from ..webauth import COOKIE, WebAuthStore
 
 
 def _to_response(result) -> CommandResponse:
@@ -66,6 +81,7 @@ def build_router(
     peer_urls: Callable[[], list[str]],
     trust: TrustStore,
     auto_store: AutoReconnectStore,
+    webauth: WebAuthStore,
 ) -> APIRouter:
     r = APIRouter()
 
@@ -383,10 +399,12 @@ def build_router(
         return CommandResponse(ok=True, message="pending")
 
     @r.post("/api/pair/confirm", response_model=CommandResponse)
-    def _pair_confirm(msg: PairMessage) -> CommandResponse:
+    async def _pair_confirm(msg: PairMessage) -> CommandResponse:
         """Peer accepted our request. Only honor it if we actually initiated with them."""
         if trust.pop_pending_out(msg.node_id) or trust.mode() == OPEN:
             trust.add_trusted(msg.node_id, msg.display_name, msg.key)
+            if msg.host and msg.port:
+                await _push_auth_to(f"http://{msg.host}:{msg.port}")  # sync our login to them
             bus.publish()
             return CommandResponse(ok=True, message="paired")
         raise HTTPException(status_code=401, detail="unsolicited pairing confirm")
@@ -401,6 +419,7 @@ def build_router(
         host, port = entry.get("host"), entry.get("port")
         if host and port:
             await _send_pair(f"http://{host}:{port}", "/api/pair/confirm", our_pair_msg())
+            await _push_auth_to(f"http://{host}:{port}")  # sync our login to them
         bus.publish()
         return CommandResponse(ok=True, message=f"paired with {entry['name']}")
 
@@ -416,9 +435,81 @@ def build_router(
         bus.publish()
         return CommandResponse(ok=True, message="unpaired")
 
+    # ---- web login ----
+    async def _push_auth_to(url: str) -> None:
+        if not webauth.enabled():
+            return
+        async with httpx.AsyncClient() as client:
+            try:
+                await client.post(
+                    f"{url}/api/auth/sync",
+                    json={"config": webauth.export_config()},
+                    headers=identity_headers(cfg.node_id, cfg.node_key),
+                    timeout=httpx.Timeout(6.0),
+                )
+            except httpx.HTTPError:
+                pass
+
+    async def _push_auth_to_peers() -> None:
+        for url in peer_urls():
+            await _push_auth_to(url)
+
+    @r.get("/api/auth/status", response_model=AuthStatus)
+    def _auth_status(request: Request) -> AuthStatus:
+        authed = (not webauth.enabled()) or webauth.valid_session(request.cookies.get(COOKIE))
+        return AuthStatus(
+            enabled=webauth.enabled(),
+            authed=authed,
+            totp_enabled=webauth.totp_enabled(),
+            username=webauth.username(),
+        )
+
+    @r.post("/api/auth/login", response_model=CommandResponse)
+    def _login(req: LoginRequest, response: Response) -> CommandResponse:
+        if not webauth.verify(req.username, req.password, req.code):
+            raise HTTPException(status_code=401, detail="invalid credentials")
+        token = webauth.create_session()
+        response.set_cookie(COOKIE, token, httponly=True, samesite="lax", max_age=30 * 86400)
+        return CommandResponse(ok=True, message="logged in")
+
+    @r.post("/api/auth/logout", response_model=CommandResponse)
+    def _logout(request: Request, response: Response) -> CommandResponse:
+        webauth.drop_session(request.cookies.get(COOKIE))
+        response.delete_cookie(COOKIE)
+        return CommandResponse(ok=True, message="logged out")
+
+    @r.post("/api/auth/set", response_model=SetAuthResponse)
+    async def _set_auth(req: SetAuthRequest, response: Response) -> SetAuthResponse:
+        secret = webauth.set_credential(req.username, req.password, req.totp_enabled)
+        # keep the setter logged in
+        response.set_cookie(
+            COOKIE, webauth.create_session(), httponly=True, samesite="lax", max_age=30 * 86400
+        )
+        await _push_auth_to_peers()  # sync to paired machines
+        uri = (
+            f"otpauth://totp/usbip-node:{req.username}?secret={secret}&issuer=usbip-node"
+            if secret
+            else None
+        )
+        return SetAuthResponse(ok=True, message="login set", totp_secret=secret, otpauth_uri=uri)
+
+    @r.post("/api/auth/disable", response_model=CommandResponse)
+    async def _disable_auth() -> CommandResponse:
+        webauth.disable()
+        await _push_auth_to_peers()
+        return CommandResponse(ok=True, message="login disabled")
+
+    @r.post("/api/auth/sync", response_model=CommandResponse)
+    def _auth_sync(msg: AuthConfigMessage, _: None = Depends(node_auth)) -> CommandResponse:
+        webauth.import_config(msg.config)
+        return CommandResponse(ok=True, message="auth synced")
+
     # ---- live state ----
     @r.websocket("/ws")
     async def _ws(ws: WebSocket) -> None:
+        if webauth.enabled() and not webauth.valid_session(ws.cookies.get(COOKIE)):
+            await ws.close(code=1008)
+            return
         await ws.accept()
         q = bus.subscribe()
         try:

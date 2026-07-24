@@ -1,6 +1,6 @@
 // Same-origin API client. The page is served by a node; that node acts as the hub and forwards
 // per-node commands to the right peer, so the browser only ever talks to this one origin.
-import type { CommandResponse, NodeState, SecurityState } from "./types";
+import type { AuthStatus, CommandResponse, NodeState, SecurityState, SetAuthResponse } from "./types";
 
 async function post(path: string, body?: unknown): Promise<CommandResponse> {
   const res = await fetch(path, {
@@ -73,6 +73,41 @@ export const pairReject = (nodeId: string) => post("/api/pair/reject", { node_id
 
 export async function unpair(nodeId: string): Promise<CommandResponse> {
   const res = await fetch(`/api/pair/${nodeId}`, { method: "DELETE" });
+  return res.json();
+}
+
+// ---- web login ----
+export async function getAuthStatus(): Promise<AuthStatus> {
+  const res = await fetch("/api/auth/status");
+  return res.json();
+}
+
+export async function login(
+  username: string,
+  password: string,
+  code?: string,
+): Promise<{ ok: boolean; status: number }> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password, code: code || null }),
+  });
+  return { ok: res.ok, status: res.status };
+}
+
+export const logout = () => post("/api/auth/logout");
+export const disableAuth = () => post("/api/auth/disable");
+
+export async function setAuth(
+  username: string,
+  password: string,
+  totpEnabled: boolean,
+): Promise<SetAuthResponse> {
+  const res = await fetch("/api/auth/set", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password, totp_enabled: totpEnabled }),
+  });
   return res.json();
 }
 

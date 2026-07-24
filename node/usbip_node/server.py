@@ -7,8 +7,8 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -19,6 +19,24 @@ from .discovery.mdns import Discovery
 from .events import StateBus
 from .peers import PeerRegistry
 from .trust import TrustStore
+from .webauth import COOKIE, WebAuthStore
+
+# Browser paths that must stay reachable without a session so the login page can load / you can log in.
+_OPEN_PATHS = {"/health", "/api/identity", "/api/auth/status", "/api/auth/login", "/api/auth/logout"}
+# Node-to-node paths — authenticated by node identity (X-Node-Key), not the web session.
+_NODE_PREFIXES = ("/api/local/",)
+_NODE_PATHS = {"/api/state", "/api/pair/request", "/api/pair/confirm", "/api/auth/sync"}
+
+
+def _needs_session(path: str) -> bool:
+    if path in _OPEN_PATHS or path in _NODE_PATHS:
+        return False
+    if any(path.startswith(p) for p in _NODE_PREFIXES):
+        return False
+    # Static assets + the SPA shell (non-/api GETs) must load so the login screen can render.
+    if not path.startswith("/api") and path != "/ws":
+        return False
+    return True
 
 # Location of the built web app (Vite outputs to web/dist). Overridable for dev.
 _WEB_DIST_CANDIDATES = [
@@ -43,6 +61,7 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     discovery = Discovery(cfg)
     trust = TrustStore()
     autoreconnect = AutoReconnectStore()
+    webauth = WebAuthStore()
 
     def peer_urls() -> list[str]:
         """Manual registry + mDNS-discovered peers, de-duplicated (fleet dedupes by node_id too)."""
@@ -64,7 +83,16 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     app.state.discovery = discovery
     app.state.trust = trust
     app.state.autoreconnect = autoreconnect
-    app.include_router(build_router(cfg, bus, registry, peer_urls, trust, autoreconnect))
+    app.state.webauth = webauth
+
+    @app.middleware("http")
+    async def enforce_login(request: Request, call_next):
+        if webauth.enabled() and _needs_session(request.url.path):
+            if not webauth.valid_session(request.cookies.get(COOKIE)):
+                return JSONResponse({"detail": "login required"}, status_code=401)
+        return await call_next(request)
+
+    app.include_router(build_router(cfg, bus, registry, peer_urls, trust, autoreconnect, webauth))
 
     web_dist = _find_web_dist()
     if web_dist is not None:

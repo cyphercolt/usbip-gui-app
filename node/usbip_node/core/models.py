@@ -121,3 +121,34 @@ class ModeRequest(BaseModel):
 
 class NodeIdRequest(BaseModel):
     node_id: str
+
+
+# ---- web login ----
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+    code: str | None = None  # TOTP, if 2FA enabled
+
+
+class SetAuthRequest(BaseModel):
+    username: str
+    password: str
+    totp_enabled: bool = False
+
+
+class AuthStatus(BaseModel):
+    enabled: bool
+    authed: bool
+    totp_enabled: bool = False
+    username: str = ""
+
+
+class SetAuthResponse(BaseModel):
+    ok: bool
+    message: str = ""
+    totp_secret: str | None = None  # returned once when enabling 2FA
+    otpauth_uri: str | None = None
+
+
+class AuthConfigMessage(BaseModel):
+    config: dict

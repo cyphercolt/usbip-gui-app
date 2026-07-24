@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getFleet, getSecurity, watchChanges } from "./api";
+import { getAuthStatus, getFleet, getSecurity, watchChanges } from "./api";
 import FleetView from "./FleetView";
 import { useFullscreen } from "./helpers";
+import LoginScreen from "./LoginScreen";
 import MachineView from "./MachineView";
 import SecurityPanel from "./SecurityPanel";
-import type { NodeState, SecurityState } from "./types";
+import type { AuthStatus, NodeState, SecurityState } from "./types";
 
 interface Toast {
   id: number;
@@ -15,6 +16,7 @@ interface Toast {
 export default function App() {
   const [fleet, setFleet] = useState<NodeState[]>([]);
   const [security, setSecurity] = useState<SecurityState | null>(null);
+  const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [showSecurity, setShowSecurity] = useState(false);
   const [live, setLive] = useState(false);
@@ -31,6 +33,9 @@ export default function App() {
   }, []);
 
   const refresh = useCallback(() => {
+    getAuthStatus()
+      .then(setAuth)
+      .catch(() => {});
     getFleet()
       .then((f) => {
         setFleet(f);
@@ -72,6 +77,10 @@ export default function App() {
   const selectedNode = selected ? fleet.find((n) => n.info.node_id === selected) : undefined;
   const pending = security?.pending.length ?? 0;
 
+  if (auth?.enabled && !auth.authed) {
+    return <LoginScreen status={auth} onLoggedIn={refresh} />;
+  }
+
   return (
     <div className="mx-auto max-w-3xl px-4 pb-16 pt-[max(1rem,env(safe-area-inset-top))]">
       <header className="flex items-center justify-between py-4">
@@ -110,6 +119,7 @@ export default function App() {
       {showSecurity && security ? (
         <SecurityPanel
           security={security}
+          auth={auth}
           notify={notify}
           onChanged={refresh}
           onBack={() => setShowSecurity(false)}

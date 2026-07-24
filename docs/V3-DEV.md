@@ -131,5 +131,12 @@ restart (note: peers that trusted the old key must unpair/re-pair).
   - ✅ Notifications: machine online/offline toasts; offline machines stay listed (reachable=false,
     60s) instead of vanishing. Device-state cache TTL raised to 5s w/ single-flight so slow nodes
     (Pi) stop flapping.
-- **Phase 5 (next)** — team-synced web-UI login + optional TOTP 2FA (browser→node auth, propagated
-  over the pairing mesh).
+- **Phase 5 — web login: DONE.** `webauth.py` (PBKDF2 password hash + RFC-6238 TOTP, stdlib only;
+  in-memory session cookie `usbip_session`). Set a username/password once in Settings → Web login; it
+  hashes locally and **syncs to every paired machine** (pushed on `/api/auth/set` and on pairing via
+  `/api/auth/sync`, node-auth gated), so the same login works on any node's web UI. Optional 2FA shows
+  a TOTP secret + otpauth URI once. A server middleware (`_needs_session` in server.py) gates all
+  browser endpoints + `/ws`; node-to-node paths and the SPA shell/login stay open. Login screen at
+  `web/src/LoginScreen.tsx`; management in the Settings panel. Verified live: gating, login, TOTP,
+  and cross-node credential sync. Endpoints: `GET /api/auth/status`, `POST /api/auth/login|logout|
+  set|disable`, `POST /api/auth/sync`.

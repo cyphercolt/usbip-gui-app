@@ -1,9 +1,151 @@
 import { useState } from "react";
-import { pairAccept, pairReject, setSecurityMode, unpair } from "./api";
+import {
+  disableAuth,
+  logout,
+  pairAccept,
+  pairReject,
+  setAuth,
+  setSecurityMode,
+  unpair,
+} from "./api";
 import { loadThemeId, saveTheme, THEMES } from "./themes";
-import type { SecurityState } from "./types";
+import type { AuthStatus, SecurityState } from "./types";
 
 type Notify = (msg: string, ok: boolean) => void;
+
+function AccessSection({
+  auth,
+  notify,
+  onChanged,
+}: {
+  auth: AuthStatus;
+  notify: Notify;
+  onChanged: () => void;
+}) {
+  const [showForm, setShowForm] = useState(!auth.enabled);
+  const [username, setUsername] = useState(auth.username || "");
+  const [password, setPassword] = useState("");
+  const [totp, setTotp] = useState(auth.totp_enabled);
+  const [secret, setSecret] = useState<{ secret: string; uri: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!username || !password) {
+      notify("Enter a username and password", false);
+      return;
+    }
+    setBusy(true);
+    const res = await setAuth(username, password, totp);
+    setBusy(false);
+    notify(res.message || (res.ok ? "login set" : "failed"), res.ok);
+    if (res.ok) {
+      setPassword("");
+      setShowForm(false);
+      if (res.totp_secret && res.otpauth_uri) setSecret({ secret: res.totp_secret, uri: res.otpauth_uri });
+      onChanged();
+    }
+  };
+
+  return (
+    <section className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 mb-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-white/70">Web login</h3>
+          <p className="text-xs text-white/50 mt-1 max-w-md">
+            {auth.enabled
+              ? `On — user "${auth.username}"${auth.totp_enabled ? " · 2FA" : ""}. Shared with every paired machine.`
+              : "Off — anyone on the network can open this page. Turn it on to require a login (it syncs to all paired machines)."}
+          </p>
+        </div>
+        {auth.enabled && (
+          <div className="flex gap-2">
+            <button
+              onClick={async () => {
+                await logout();
+                onChanged();
+              }}
+              className="rounded-lg bg-white/10 hover:bg-white/15 px-3 py-2 text-xs"
+            >
+              Log out
+            </button>
+          </div>
+        )}
+      </div>
+
+      {secret && (
+        <div className="mt-3 rounded-xl bg-emerald-500/10 ring-1 ring-emerald-400/20 p-3">
+          <p className="text-xs text-emerald-200">
+            Add this to your authenticator app (shown once):
+          </p>
+          <code className="block mt-1 text-sm break-all text-emerald-100">{secret.secret}</code>
+          <a href={secret.uri} className="text-xs text-emerald-300 underline break-all">
+            open in authenticator
+          </a>
+        </div>
+      )}
+
+      {showForm ? (
+        <div className="mt-3 space-y-2">
+          <input
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="username"
+            className="w-full rounded-lg bg-black/30 px-3 py-2 text-sm ring-1 ring-white/10 outline-none focus:ring-sky-400"
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="password"
+            className="w-full rounded-lg bg-black/30 px-3 py-2 text-sm ring-1 ring-white/10 outline-none focus:ring-sky-400"
+          />
+          <label className="flex items-center gap-2 text-sm text-white/70">
+            <input type="checkbox" checked={totp} onChange={(e) => setTotp(e.target.checked)} />
+            Enable 2FA (authenticator app)
+          </label>
+          <div className="flex gap-2 pt-1">
+            <button
+              disabled={busy}
+              onClick={save}
+              className="rounded-lg bg-sky-500/80 hover:bg-sky-500 px-4 py-2 text-sm font-medium disabled:opacity-40"
+            >
+              {auth.enabled ? "Update login" : "Turn on login"}
+            </button>
+            {auth.enabled && (
+              <button
+                onClick={() => setShowForm(false)}
+                className="rounded-lg bg-white/10 px-3 py-2 text-sm"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        auth.enabled && (
+          <div className="mt-3 flex gap-2">
+            <button
+              onClick={() => setShowForm(true)}
+              className="rounded-lg bg-white/10 hover:bg-white/15 px-3 py-2 text-xs"
+            >
+              Change password / 2FA
+            </button>
+            <button
+              onClick={async () => {
+                await disableAuth();
+                notify("login turned off", true);
+                onChanged();
+              }}
+              className="rounded-lg bg-rose-500/70 hover:bg-rose-500 px-3 py-2 text-xs"
+            >
+              Turn off login
+            </button>
+          </div>
+        )
+      )}
+    </section>
+  );
+}
 
 function Appearance() {
   const [theme, setThemeId] = useState(loadThemeId());
@@ -36,11 +178,13 @@ function Appearance() {
 
 export default function SecurityPanel({
   security,
+  auth,
   notify,
   onChanged,
   onBack,
 }: {
   security: SecurityState;
+  auth: AuthStatus | null;
   notify: Notify;
   onChanged: () => void;
   onBack: () => void;
@@ -65,6 +209,7 @@ export default function SecurityPanel({
         <h2 className="text-lg font-semibold">Settings</h2>
       </div>
 
+      {auth && <AccessSection auth={auth} notify={notify} onChanged={onChanged} />}
       <Appearance />
 
       {/* mode */}

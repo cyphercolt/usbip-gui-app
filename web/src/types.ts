@@ -43,6 +43,20 @@ export interface SecurityState {
   pending: PairedRef[];
 }
 
+export interface AuthStatus {
+  enabled: boolean;
+  authed: boolean;
+  totp_enabled: boolean;
+  username: string;
+}
+
+export interface SetAuthResponse {
+  ok: boolean;
+  message: string;
+  totp_secret: string | null;
+  otpauth_uri: string | null;
+}
+
 export interface NodeState {
   info: NodeInfo;
   shareable: Device[];
