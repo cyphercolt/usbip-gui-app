@@ -1,6 +1,6 @@
 [project]
 name = "usbip-node"
-version = "0.1.0"
+version = "3.0.0"
 description = "One symmetric LAN service (agent + hub + webserver) for USB/IP fleet control"
 requires-python = ">=3.11"
 dependencies = [
