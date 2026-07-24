@@ -1,93 +1,121 @@
-# 🖥️ USBIP GUI Application
+# 🔌 USB/IP Fleet
 
-A cross-platform desktop GUI for managing USBIP devices locally and remotely via SSH. Perfect for gaming setups, home labs, and remote USB device management. Runs on **Linux** and **Windows**.
+Share USB devices across every machine in your home from your phone. Plug a controller into the
+Raspberry Pi in the living room, open a web page on your phone, and **send it to your gaming PC** —
+it just shows up there. Detach it and it's free again.
 
-**Note**: Fully coded with GitHub Copilot. I needed a USB-over-IP app tailored to my needs, and I'm not a coder, so here we are!
+Each machine runs one small service that is agent + hub + web server all in one. Point any phone or
+browser on your LAN at any machine and you see the **whole fleet** — no app to install, no cloud.
+
+<p align="center">
+  <img src="docs/images/demo.gif" alt="Sending a USB device from one machine to another" width="320">
+</p>
+
+> **Rewrite note:** This is a ground-up rewrite (v3) of the original PyQt desktop app. The old
+> desktop version lives in the `v2.4.4` git tag if you need it.
 
 ## ✨ Features
 
-- 🔌 **Device Management** - Attach/detach USB devices with auto-reconnect
-- 🎨 **Modern UI** - 4 themes with complete persistence
-- 🎮 **Gaming Optimized** - Real-time ping monitoring
-- 🚀 **Smart Automation** - Auto-reconnect, bulk operations
-- 🛡️ **SSH Integration** - Remote device management
+- 🖥️ **Whole-fleet view** — every machine on your LAN, auto-discovered over mDNS. No IPs to type.
+- 📲 **Phone-first web UI** — plain responsive website served on your LAN. "Add to home screen" +
+  a fullscreen button. Nothing to install.
+- 🔀 **Any‑PC → any‑PC** — pick a device on one machine, send it to another. Move it between
+  machines with an in‑app confirm.
+- 🔁 **Auto‑reconnect** — arm a device and its machine re‑grabs it after a reboot, replug, or blip.
+- 🔒 **Pairing (Syncthing‑style)** — machines must be approved before they can share, on by default.
+- 👤 **Shared web login + 2FA** — set a username/password once; it syncs to every paired machine.
+  Optional TOTP authenticator (with a QR code).
+- 🎨 **Themes** — six looks, and live/offline machine notifications.
+- 🐧 **Linux + Raspberry Pi** first‑class. Windows support is included but still being tested.
 
 ## 📸 Screenshots
-<img width="402" height="230" alt="image" src="https://github.com/user-attachments/assets/d1a8f619-e839-4258-ab44-a5de04e2ea1f" /> <img width="249" height="181" alt="image" src="https://github.com/user-attachments/assets/dab0290b-6e21-4e83-a4ed-0a5b631b574b" />
-<img width="1455" height="933" alt="image" src="https://github.com/user-attachments/assets/aa69553a-b549-4c4b-97bd-50083c746377" />
 
-## 🚀 Installation
+| Fleet | A machine | Attached + auto‑reconnect |
+|---|---|---|
+| ![Fleet](docs/images/fleet.png) | ![Machine](docs/images/machine-after.png) | ![Attached](docs/images/attached-after.png) |
 
-### Linux
+| Settings (login · themes · pairing) | Sign in |
+|---|---|
+| ![Settings](docs/images/settings.png) | ![Login](docs/images/login.png) |
+
+## 🚀 Install
+
+On **each** machine you want in the fleet (Linux / Raspberry Pi):
+
 ```bash
 git clone https://github.com/cyphercolt/usbip-gui-app.git
 cd usbip-gui-app
-sudo apt install usbip
-sudo modprobe vhci_hcd usbip_host
-echo -e "vhci_hcd\nusbip_host" | sudo tee /etc/modules-load.d/usbip.conf
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python3 src/main.py
+sudo packaging/install-linux.sh
 ```
 
-### Windows
+That installs `usbip` + kernel modules, and runs the node as a **root systemd service** on
+`http://<that-machine-ip>:4820` (root, so USB/IP needs no sudo password). Re‑run the same command
+after `git pull` to update.
+
+Then open `http://<any-machine-ip>:4820` on your phone. Machines discover each other automatically;
+approve each pairing once (they start **locked**).
+
+<sub>The prebuilt web UI ships in the repo, so the target machines don't need Node.js.</sub>
+
+## 🎮 Using it
+
+1. **Plug a device** into any machine (say the Pi).
+2. On the fleet page, tap that machine → find the device → **Send to…** → pick a destination.
+3. On the destination it appears under **Attached devices**; toggle **🔁 Auto** to keep it there.
+4. **Detach** (or the ✕ on the source) frees the device — it works locally again and can be sent
+   elsewhere.
+
+## 🧭 Architecture
+
+```
+   Phone / browser ──http──▶  ANY node's IP
+                                │  serves the web UI + REST/WebSocket API
+                                │  discovers peers (mDNS), aggregates the fleet
+                                │  orchestrates any‑PC → any‑PC attach
+             ┌──────────────────┼───────────────────┐
+        pairing token      pairing token       pairing token
+             ▼                  ▼                    ▼
+        NODE (Pi)         NODE (gaming PC)      NODE (laptop)
+      usbip locally       usbip locally         usbip locally
+```
+
+- **Backend** — Python + FastAPI + `zeroconf`; one symmetric service per machine (`node/`).
+- **Frontend** — React + TypeScript + Vite + Tailwind, built to static files the node serves (`web/`).
+- **Transport** — plain HTTP on the LAN. Node‑to‑node calls are authenticated by each node's key;
+  the browser is gated by the web login when you enable it.
+
+Developer notes: [`docs/V3-DEV.md`](docs/V3-DEV.md).
+
+## 🔐 Security
+
+- **Pairing is on by default.** Discovered machines show as *pending* until you approve them; an
+  unpaired machine can't see devices or issue commands. (Switch to *Open* in Settings for a fully
+  trusted LAN.)
+- **Web login** (optional) gates the UI so nobody on the LAN can drive USB without the credential.
+  Set it once — it syncs to every paired machine — and turn on **TOTP 2FA** if you want.
+
+## 🪟 Windows (experimental)
+
+Needs [`usbipd-win`](https://github.com/dorssel/usbipd-win) (`winget install usbipd`) to share and
+[`usbip-win2`](https://github.com/vadimgrn/usbip-win2) to attach. Then, in an elevated PowerShell:
+
 ```powershell
-git clone https://github.com/cyphercolt/usbip-gui-app.git
-cd usbip-gui-app
-# Install Windows USB/IP from Microsoft: https://github.com/dorssel/usbipd-win
-winget install usbipd
-# Also install usbip-win2 for client functionality: https://github.com/vadimgrn/usbip-win2
-# Download and install usbip-win2 from the releases page
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-python src/main.py
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\packaging\install-windows.ps1
 ```
 
-## 🔧 Usage
+The code is ported from the old app's working commands but hasn't been verified on current hardware
+yet — please file an issue with your `usbipd list` output if something's off.
 
-1. Add IP addresses via "Manage IPs"
-2. Select IP from dropdown (auto-pings)
-3. Connect via SSH to load remote devices
-4. Bind/Unbind devices on remote server
-5. Attach/Detach devices locally
-6. Enable Auto-reconnect for critical devices
+## 🛠️ Development
 
-## 🎯 Use Cases
-
-- Gaming controllers with auto-reconnect
-- Development hardware sharing
-- Home lab USB management
-- Remote workstation peripherals
-
-## 🔧 Troubleshooting
-
-### Linux
 ```bash
-# Kernel modules not loaded
-sudo modprobe vhci_hcd usbip_host
-
-# Check service status
-sudo systemctl status usbipd
+scripts/dev-node.sh          # backend :4820 + hot‑reloading UI :5173
+# demo mode with fake devices (no hardware):
+USBIP_NODE_DEMO=1 USBIP_NODE_DEMO_DEVICES=1-1.1,1-1.2 python -m usbip_node
+cd node && pytest -q         # backend tests
 ```
-
-### Windows
-```powershell
-# Check usbipd service
-usbipd list
-
-# Restart service if needed
-Restart-Service usbipd
-```
-
-## 🤝 Contributing
-
-Contributions welcome!
 
 ## 📜 License
 
-MIT License - See LICENSE file for details.
-
----
-
-**⭐ 7,729 lines of Python code built with AI**
+MIT — see [LICENSE](LICENSE).

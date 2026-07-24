@@ -10,6 +10,7 @@ Commands invalidate the cache so the UI reflects changes immediately.
 
 from __future__ import annotations
 
+import os
 import platform
 import threading
 import time
@@ -18,6 +19,9 @@ from . import usbip_linux, usbip_windows
 from .models import AttachedDevice, Device
 
 _IS_WINDOWS = platform.system().lower().startswith("win")
+_DEMO = os.environ.get("USBIP_NODE_DEMO") == "1"
+if _DEMO:
+    from . import demo
 
 # TTL must be >= the UI poll interval or every poll is a cache miss and re-runs usbip. On a slow
 # Pi that caused fetch timeouts and made the node flap in/out of the fleet.
@@ -61,34 +65,38 @@ def backend_name() -> str:
 
 
 def list_shareable() -> list[Device]:
+    if _DEMO:
+        return demo.list_shareable()
     fn = usbip_windows.list_shareable if _IS_WINDOWS else usbip_linux.list_shareable
     return _cached("shareable", fn)
 
 
 def list_attached() -> list[AttachedDevice]:
+    if _DEMO:
+        return demo.list_attached()
     # Client-side listing is identical on both platforms.
     return _cached("attached", usbip_linux.list_attached)
 
 
 def bind(busid: str):
-    r = usbip_windows.bind(busid) if _IS_WINDOWS else usbip_linux.bind(busid)
+    r = demo.bind(busid) if _DEMO else (usbip_windows.bind(busid) if _IS_WINDOWS else usbip_linux.bind(busid))
     _invalidate()
     return r
 
 
 def unbind(busid: str):
-    r = usbip_windows.unbind(busid) if _IS_WINDOWS else usbip_linux.unbind(busid)
+    r = demo.unbind(busid) if _DEMO else (usbip_windows.unbind(busid) if _IS_WINDOWS else usbip_linux.unbind(busid))
     _invalidate()
     return r
 
 
 def attach(remote_host: str, busid: str):
-    r = usbip_linux.attach(remote_host, busid)
+    r = demo.attach(remote_host, busid) if _DEMO else usbip_linux.attach(remote_host, busid)
     _invalidate()
     return r
 
 
 def detach(port: str):
-    r = usbip_linux.detach(port)
+    r = demo.detach(port) if _DEMO else usbip_linux.detach(port)
     _invalidate()
     return r

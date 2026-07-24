@@ -74,6 +74,26 @@ export default function App() {
     };
   }, [refresh]);
 
+  // Hash routing: #/m/<id> machine view, #/settings, else fleet. Enables deep links + Android back.
+  useEffect(() => {
+    const apply = () => {
+      const h = location.hash;
+      if (h.startsWith("#/m/")) {
+        setSelected(decodeURIComponent(h.slice(4)));
+        setShowSecurity(false);
+      } else if (h === "#/settings") {
+        setShowSecurity(true);
+        setSelected(null);
+      } else {
+        setSelected(null);
+        setShowSecurity(false);
+      }
+    };
+    apply();
+    window.addEventListener("hashchange", apply);
+    return () => window.removeEventListener("hashchange", apply);
+  }, []);
+
   const selectedNode = selected ? fleet.find((n) => n.info.node_id === selected) : undefined;
   const pending = security?.pending.length ?? 0;
 
@@ -94,8 +114,7 @@ export default function App() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => {
-              setSelected(null);
-              setShowSecurity((v) => !v);
+              location.hash = showSecurity ? "#/" : "#/settings";
             }}
             className="relative rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 transition px-3 py-2 text-sm font-medium ring-1 ring-white/10"
             title="Settings"
@@ -122,7 +141,9 @@ export default function App() {
           auth={auth}
           notify={notify}
           onChanged={refresh}
-          onBack={() => setShowSecurity(false)}
+          onBack={() => {
+            location.hash = "#/";
+          }}
         />
       ) : selectedNode ? (
         <MachineView
@@ -130,12 +151,21 @@ export default function App() {
           fleet={fleet}
           notify={notify}
           onChanged={refresh}
-          onBack={() => setSelected(null)}
+          onBack={() => {
+            location.hash = "#/";
+          }}
         />
       ) : fleet.length === 0 ? (
         <div className="mt-16 text-center text-white/40">Looking for machines…</div>
       ) : (
-        <FleetView fleet={fleet} onOpen={setSelected} notify={notify} onChanged={refresh} />
+        <FleetView
+          fleet={fleet}
+          onOpen={(id) => {
+            location.hash = "#/m/" + id;
+          }}
+          notify={notify}
+          onChanged={refresh}
+        />
       )}
 
       {/* toasts */}
