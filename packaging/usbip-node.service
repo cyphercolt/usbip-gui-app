@@ -12,6 +12,7 @@ Type=simple
 User=root
 Environment=USBIP_NODE_PORT=4820
 #USBIP_NODE_UPDATE_BRANCH=main
+#USBIP_NODE_UPDATE_REPO=
 # Make sure the USB/IP kernel modules are present before we start.
 ExecStartPre=-/sbin/modprobe vhci_hcd
 ExecStartPre=-/sbin/modprobe usbip_host

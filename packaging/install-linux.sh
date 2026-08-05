@@ -5,7 +5,15 @@
 # Result: the node runs on boot at http://<this-machine-ip>:4820, USB/IP works with no sudo prompts.
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The source repo can be overridden. This lets /opt/usbip-node be just the installed runtime
+# while the real git checkout lives elsewhere (e.g. ~/gitstuff/usbip-gui-app).
+USBIP_NODE_UPDATE_REPO="${USBIP_NODE_UPDATE_REPO:-}"
+if [ -n "$USBIP_NODE_UPDATE_REPO" ]; then
+  REPO_DIR="$(cd "$USBIP_NODE_UPDATE_REPO" && pwd)"
+else
+  REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+fi
 PREFIX=/opt/usbip-node
 PORT="${USBIP_NODE_PORT:-4820}"
 UPDATE_BRANCH="${USBIP_NODE_UPDATE_BRANCH:-main}"
@@ -13,6 +21,14 @@ UPDATE_BRANCH="${USBIP_NODE_UPDATE_BRANCH:-main}"
 if [ "$(id -u)" -ne 0 ]; then
   echo "Please run as root: sudo $0" >&2
   exit 1
+fi
+
+if [ -n "${USBIP_NODE_UPDATE_REPO:-}" ]; then
+  if [ ! -d "$REPO_DIR/.git" ]; then
+    echo "!! USBIP_NODE_UPDATE_REPO ($USBIP_NODE_UPDATE_REPO) is not a git checkout" >&2
+    exit 1
+  fi
+  echo "==> Installing from source repo: $REPO_DIR"
 fi
 
 echo "==> Installing usbip + Python"
@@ -52,9 +68,15 @@ cp "$REPO_DIR/packaging/update.sh" "$PREFIX/update.sh"
 chmod +x "$PREFIX/update.sh"
 
 echo "==> Installing systemd service"
+SERVICE_FILE=$(mktemp)
 sed -e "s/USBIP_NODE_PORT=4820/USBIP_NODE_PORT=$PORT/" \
     -e "s|#USBIP_NODE_UPDATE_BRANCH=main|USBIP_NODE_UPDATE_BRANCH=$UPDATE_BRANCH|" \
-    "$REPO_DIR/packaging/usbip-node.service" > /etc/systemd/system/usbip-node.service
+    "$REPO_DIR/packaging/usbip-node.service" > "$SERVICE_FILE"
+if [ -n "${USBIP_NODE_UPDATE_REPO:-}" ]; then
+  sed -i "s|#USBIP_NODE_UPDATE_REPO=|USBIP_NODE_UPDATE_REPO=$REPO_DIR|" "$SERVICE_FILE"
+fi
+mv "$SERVICE_FILE" /etc/systemd/system/usbip-node.service
+chmod 644 /etc/systemd/system/usbip-node.service
 systemctl daemon-reload
 systemctl enable usbip-node.service
 systemctl restart usbip-node.service   # restart so re-running this script also UPDATES a live node

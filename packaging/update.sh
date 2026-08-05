@@ -3,7 +3,7 @@
 # Run by the node service when the user clicks Update. Do not run directly unless testing.
 set -euo pipefail
 
-REPO_DIR="/opt/usbip-node"
+REPO_DIR="${USBIP_NODE_UPDATE_REPO:-/opt/usbip-node}"
 BRANCH="${USBIP_NODE_UPDATE_BRANCH:-main}"
 
 if [ ! -d "$REPO_DIR/.git" ]; then
@@ -12,6 +12,7 @@ if [ ! -d "$REPO_DIR/.git" ]; then
 fi
 
 cd "$REPO_DIR"
+echo "==> Updating repo at $REPO_DIR (branch: $BRANCH)"
 
 echo "==> Tagging current commit as rollback point"
 TAG="pre-update-$(date +%s)"
