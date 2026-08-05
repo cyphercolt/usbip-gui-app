@@ -435,6 +435,93 @@ def build_router(
     def _update_logs() -> list[UpdateLogEntry]:
         return updater.logs()
 
+    # Hub proxies: browser calls these, node forwards to the peer's /api/local/update/*.
+    @r.get("/api/node/{node_id}/update/status", response_model=UpdateState)
+    async def _node_update_status(node_id: str) -> UpdateState:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            return updater.state
+        if not url:
+            raise HTTPException(status_code=404, detail="node not found")
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{url}/api/local/update/status",
+                    headers=identity_headers(cfg.node_id, cfg.node_key),
+                    timeout=httpx.Timeout(8.0),
+                )
+                resp.raise_for_status()
+                return UpdateState.model_validate(resp.json())
+            except httpx.HTTPError as e:
+                raise HTTPException(status_code=502, detail=f"peer unreachable: {e}")
+            except ValueError as e:
+                raise HTTPException(status_code=502, detail=f"bad response from peer: {e}")
+
+    @r.post("/api/node/{node_id}/update/check", response_model=UpdateState)
+    async def _node_update_check(node_id: str) -> UpdateState:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            return await updater.check_now()
+        if not url:
+            raise HTTPException(status_code=404, detail="node not found")
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(
+                    f"{url}/api/local/update/check",
+                    json={},
+                    headers=identity_headers(cfg.node_id, cfg.node_key),
+                    timeout=httpx.Timeout(20.0),
+                )
+                resp.raise_for_status()
+                return UpdateState.model_validate(resp.json())
+            except httpx.HTTPError as e:
+                raise HTTPException(status_code=502, detail=f"peer unreachable: {e}")
+            except ValueError as e:
+                raise HTTPException(status_code=502, detail=f"bad response from peer: {e}")
+
+    @r.post("/api/node/{node_id}/update/start", response_model=UpdateState)
+    async def _node_update_start(node_id: str) -> UpdateState:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            return await updater.start_update()
+        if not url:
+            raise HTTPException(status_code=404, detail="node not found")
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(
+                    f"{url}/api/local/update/start",
+                    json={},
+                    headers=identity_headers(cfg.node_id, cfg.node_key),
+                    timeout=httpx.Timeout(20.0),
+                )
+                resp.raise_for_status()
+                return UpdateState.model_validate(resp.json())
+            except httpx.HTTPError as e:
+                raise HTTPException(status_code=502, detail=f"peer unreachable: {e}")
+            except ValueError as e:
+                raise HTTPException(status_code=502, detail=f"bad response from peer: {e}")
+
+    @r.get("/api/node/{node_id}/update/logs", response_model=list[UpdateLogEntry])
+    async def _node_update_logs(node_id: str) -> list[UpdateLogEntry]:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            return updater.logs()
+        if not url:
+            raise HTTPException(status_code=404, detail="node not found")
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{url}/api/local/update/logs",
+                    headers=identity_headers(cfg.node_id, cfg.node_key),
+                    timeout=httpx.Timeout(8.0),
+                )
+                resp.raise_for_status()
+                return [UpdateLogEntry.model_validate(x) for x in resp.json()]
+            except httpx.HTTPError as e:
+                raise HTTPException(status_code=502, detail=f"peer unreachable: {e}")
+            except ValueError as e:
+                raise HTTPException(status_code=502, detail=f"bad response from peer: {e}")
+
     # Node-to-node endpoints (gated by node_auth) used by the hub proxies below.
     @r.get("/api/local/update/status", response_model=UpdateState)
     def _local_update_status(_: None = Depends(node_auth)) -> UpdateState:
@@ -455,16 +542,23 @@ def build_router(
     @r.post("/api/update/start-all", response_model=CommandResponse)
     async def _update_start_all() -> CommandResponse:
         fleet, id_to_url = await _fleet_now()
-        targets = [
-            (n.info.node_id, url)
+        targets: list[tuple[str, str | None]] = [
+            (n.info.node_id, id_to_url.get(n.info.node_id))
             for n in fleet
-            if n.info.node_id != cfg.node_id
-            and (url := id_to_url.get(n.info.node_id))
-            and n.info.paired
-            and n.info.reachable
+            if n.info.paired and n.info.reachable
         ]
+        # Start self first via the local endpoint so the page gets a response before this node
+        # potentially restarts. Peers are started via proxy.
+        if any(nid == cfg.node_id for nid, _ in targets):
+            try:
+                await updater.start_update()
+            except Exception as e:
+                # Self-start failure is non-fatal; record it and continue with peers.
+                pass
+
         started: list[str] = []
         failed: list[str] = []
+        peer_targets = [(nid, url) for nid, url in targets if nid != cfg.node_id and url]
         async with httpx.AsyncClient() as client:
             results = await asyncio.gather(*[
                 client.post(
@@ -473,9 +567,9 @@ def build_router(
                     headers=identity_headers(cfg.node_id, cfg.node_key),
                     timeout=httpx.Timeout(20.0),
                 )
-                for _, url in targets
-            ]) if targets else []
-        for (nid, _), resp in zip(targets, results):
+                for _, url in peer_targets
+            ]) if peer_targets else []
+        for (nid, _), resp in zip(peer_targets, results):
             if isinstance(resp, Exception):
                 failed.append(f"{nid}: {resp}")
                 continue
@@ -485,8 +579,11 @@ def build_router(
                 started.append(nid)
             except (httpx.HTTPError, ValueError) as e:
                 failed.append(f"{nid}: {e}")
-        # Don't start self via proxy; the user is already on a node, so self is handled by the hub
-        # if they want. start-all intentionally updates peers only, keeping the page live.
+
+        # We always count self as "started" if it was in the target list, because the local helper
+        # runs out-of-process and will restart us momentarily.
+        if any(nid == cfg.node_id for nid, _ in targets):
+            started.append(cfg.node_id)
         return CommandResponse(
             ok=len(failed) == 0,
             message=f"started {len(started)} node(s); failed: {', '.join(failed) if failed else 'none'}",
