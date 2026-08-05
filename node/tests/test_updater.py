@@ -104,19 +104,18 @@ async def test_update_available_when_remote_ahead(tmp_git):
 async def test_start_update_sets_running(tmp_git, monkeypatch):
     updater = Updater("abc", "3.0.0")
     updater.refresh_repo()
-    # Mock the actual platform trigger so we don't spawn processes.
-    trigger_called = []
+    # Mock the actual spawn so we don't start a real update process.
+    spawn_called = []
 
-    def fake_trigger(self):
-        trigger_called.append(True)
+    def fake_spawn(self):
+        spawn_called.append(True)
 
-    monkeypatch.setattr(Updater, "_trigger_linux_update", fake_trigger)
-    monkeypatch.setattr(Updater, "_trigger_windows_update", fake_trigger)
+    monkeypatch.setattr(Updater, "_spawn_update_helper", fake_spawn)
 
     state = await updater.start_update()
     assert state.update_running
     assert state.update_stage == "fetching"
-    assert trigger_called
+    assert spawn_called
 
 
 async def test_start_update_refuses_when_no_repo(tmp_path, monkeypatch):

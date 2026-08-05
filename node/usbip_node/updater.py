@@ -138,6 +138,18 @@ def _parse_commit_time(out: str) -> str | None:
     return line or None
 
 
+def _parse_version(py_text: str) -> str | None:
+    """Extract __version__ from the contents of a __init__.py file."""
+    for line in py_text.splitlines():
+        if line.strip().startswith("__version__"):
+            try:
+                value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                return value
+            except IndexError:
+                return None
+    return None
+
+
 class Updater:
     """Owns update state for this node and runs periodic git checks."""
 
@@ -170,6 +182,27 @@ class Updater:
     @property
     def state(self) -> UpdateState:
         return self._state
+
+    def _log(self, level: str, stage: str, message: str, commit_before: str = "", commit_after: str = "") -> None:
+        entry = UpdateLogEntry(
+            ts=_now_iso(),
+            level=level,
+            stage=stage,
+            message=message,
+            commit_before=commit_before,
+            commit_after=commit_after,
+        )
+        try:
+            with self._log_path.open("a") as f:
+                f.write(entry.model_dump_json() + "\n")
+        except OSError:
+            pass
+
+    def _set_stage(self, stage: str, message: str = "") -> None:
+        self._state = self._state.model_copy(
+            update={"update_stage": stage, "update_message": message}
+        )
+        self._log("info" if stage != "error" else "error", stage, message)
 
     async def check_now(self) -> UpdateState:
         self._log("info", self._state.update_stage, "Update check started")
@@ -224,7 +257,15 @@ class Updater:
             self._log("error", "error", "git rev-parse failed")
             return self._state
 
-        update_available = installed.strip() != remote.strip()
+        # Also compare the version string on the remote branch; a commit that only bumps version
+        # without changing runtime code should still be detected, and vice versa.
+        remote_version_ok, remote_version_text = _run_text(
+            ["git", "show", f"origin/{branch}:node/usbip_node/__init__.py"], cwd=cwd
+        )
+        remote_version = _parse_version(remote_version_text) if remote_version_ok else None
+        commit_changed = installed.strip() != remote.strip()
+        version_changed = bool(remote_version and remote_version != self._version)
+        update_available = commit_changed or version_changed
 
         # Find latest pre-update tag for rollback info.
         tag_ok, tags_out = _run_text(
@@ -251,7 +292,7 @@ class Updater:
         self._log(
             "success" if not update_available else "info",
             self._state.update_stage,
-            f"Update check complete; available={update_available}; installed={before[:7]}; remote={after[:7]}",
+            f"Update check complete; available={update_available}; installed={before[:7]} ({self._version}); remote={after[:7]} ({remote_version or '?'})",
             commit_before=before,
             commit_after=after,
         )
@@ -269,27 +310,6 @@ class Updater:
             except asyncio.CancelledError:
                 raise
             await self.check_now()
-
-    def _log(self, level: str, stage: str, message: str, commit_before: str = "", commit_after: str = "") -> None:
-        entry = UpdateLogEntry(
-            ts=_now_iso(),
-            level=level,
-            stage=stage,
-            message=message,
-            commit_before=commit_before,
-            commit_after=commit_after,
-        )
-        try:
-            with self._log_path.open("a") as f:
-                f.write(entry.model_dump_json() + "\n")
-        except OSError:
-            pass
-
-    def _set_stage(self, stage: str, message: str = "") -> None:
-        self._state = self._state.model_copy(
-            update={"update_stage": stage, "update_message": message}
-        )
-        self._log("info" if stage != "error" else "error", stage, message)
 
     async def start_update(self) -> UpdateState:
         """Trigger the out-of-process update helper and mark state running."""
@@ -315,18 +335,33 @@ class Updater:
             }
         )
         self._log("info", "fetching", f"Update triggered; repo={self._probe.path}; branch={self._probe.branch}")
-
-        if platform.system() == "Windows":
-            self._trigger_windows_update()
-        else:
-            self._trigger_linux_update()
-
+        self._spawn_update_helper()
         return self._state
 
-    def _trigger_linux_update(self) -> None:
+    def _spawn_update_helper(self) -> None:
+        """Run the platform update helper detached so it survives this node's restart."""
+        if platform.system() == "Windows":
+            script = self._probe.path / "packaging" / "update.ps1"
+            try:
+                subprocess.Popen(
+                    [
+                        "powershell",
+                        "-ExecutionPolicy", "Bypass",
+                        "-File", str(script),
+                    ],
+                    env={**os.environ, "USBIP_NODE_UPDATE_BRANCH": self._probe.branch},
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                )
+                self._log("info", "fetching", "Windows update helper spawned")
+            except Exception as e:
+                self._running = False
+                self._set_stage("error", f"could not start Windows update helper: {e}")
+            return
+
         script = self._probe.path / "packaging" / "update.sh"
         log = _linux_state_path() / "update.log"
-        # Write a request marker so the helper can log who requested it.
         marker = _linux_state_path() / "update-request.json"
         try:
             marker.write_text(
@@ -343,59 +378,22 @@ class Updater:
         cmd = f"env USBIP_NODE_UPDATE_BRANCH={self._probe.branch} USBIP_NODE_UPDATE_REPO={self._probe.path} bash {script}"
         self._log("info", "fetching", f"Spawning update helper: {cmd}")
 
-        # Use a unique unit name so repeated clicks don't collide. Start in 1s so the
-        # requesting node has time to finish its HTTP response before the service restarts.
-        unit = f"usbip-node-update-{int(time.time())}"
-        # Prefer systemd-run to detach from the node process. If unavailable, fall back to
-        # nohup so the shell helper survives our exit.
+        # Spawn a detached shell that survives this node's exit. start_new_session gives it a
+        # fresh session; when the parent (usbip-node) is killed by the helper's reinstall, the
+        # helper becomes a child of PID 1 and keeps running until it finishes and restarts us.
         try:
-            subprocess.Popen(
-                [
-                    "systemd-run",
-                    "--unit", unit,
-                    "--on-active=1s",
-                    "--timer-property=AccuracySec=1us",
-                    "--property=StandardOutput=append:" + str(log),
-                    "--property=StandardError=append:" + str(log),
-                    "--setenv", f"USBIP_NODE_UPDATE_BRANCH={self._probe.branch}",
-                    "--setenv", f"USBIP_NODE_UPDATE_REPO={self._probe.path}",
-                    str(script),
-                ],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            self._log("info", "fetching", f"systemd-run timer scheduled: {unit}")
-        except FileNotFoundError:
-            self._log("info", "fetching", "systemd-run not found; using nohup fallback")
             with log.open("a") as f:
-                subprocess.Popen(
-                    ["bash", "-c", f"sleep 1; exec {script}"],
+                proc = subprocess.Popen(
+                    ["bash", "-c", f"sleep 2; exec {script}"],
                     stdout=f,
                     stderr=subprocess.STDOUT,
                     start_new_session=True,
                     env=env,
                 )
+            self._log("info", "fetching", f"Update helper started (pid={proc.pid})")
         except Exception as e:
-            # If we can't even spawn the helper, mark the state as errored so the UI doesn't
-            # stay stuck on "Fetching".
             self._running = False
             self._set_stage("error", f"could not start update helper: {e}")
-
-    def _trigger_windows_update(self) -> None:
-        script = self._probe.path / "packaging" / "update.ps1"
-        # Launch an elevated PowerShell that survives the node exit.
-        subprocess.Popen(
-            [
-                "powershell",
-                "-ExecutionPolicy", "Bypass",
-                "-File", str(script),
-            ],
-            env={**os.environ, "USBIP_NODE_UPDATE_BRANCH": self._probe.branch},
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-        )
 
     def logs(self, limit: int = 100) -> list[UpdateLogEntry]:
         """Return recent update log entries newest-first."""
