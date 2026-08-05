@@ -6,29 +6,39 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The source repo can be overridden. This lets /opt/usbip-node be just the installed runtime
-# while the real git checkout lives elsewhere (e.g. ~/gitstuff/usbip-gui-app).
-USBIP_NODE_UPDATE_REPO="${USBIP_NODE_UPDATE_REPO:-}"
-if [ -n "$USBIP_NODE_UPDATE_REPO" ]; then
-  REPO_DIR="$(cd "$USBIP_NODE_UPDATE_REPO" && pwd)"
-else
-  REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-fi
 PREFIX=/opt/usbip-node
 PORT="${USBIP_NODE_PORT:-4820}"
 UPDATE_BRANCH="${USBIP_NODE_UPDATE_BRANCH:-main}"
+UPSTREAM_URL="${USBIP_NODE_REPO_URL:-https://github.com/cyphercolt/usbip-gui-app.git}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Please run as root: sudo $0" >&2
   exit 1
 fi
 
+# Pick the git checkout to install from. Priority:
+#   1. USBIP_NODE_UPDATE_REPO env override (power users)
+#   2. The directory this script is inside (normal "git clone + run install")
+#   3. /opt/usbip-node if it's already a git checkout (re-run install to update)
+#   4. Clone the public repo into /opt/usbip-node (release tarball / curl pipe)
 if [ -n "${USBIP_NODE_UPDATE_REPO:-}" ]; then
+  REPO_DIR="$(cd "$USBIP_NODE_UPDATE_REPO" && pwd)"
   if [ ! -d "$REPO_DIR/.git" ]; then
     echo "!! USBIP_NODE_UPDATE_REPO ($USBIP_NODE_UPDATE_REPO) is not a git checkout" >&2
     exit 1
   fi
-  echo "==> Installing from source repo: $REPO_DIR"
+  echo "==> Installing from override repo: $REPO_DIR"
+elif [ -d "$SCRIPT_DIR/../.git" ]; then
+  REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+  echo "==> Installing from current directory: $REPO_DIR"
+elif [ -d "$PREFIX/.git" ]; then
+  REPO_DIR="$PREFIX"
+  echo "==> Updating existing install at $PREFIX"
+else
+  echo "==> No local git checkout found; cloning $UPSTREAM_URL"
+  rm -rf "$PREFIX"
+  git clone --branch "$UPDATE_BRANCH" "$UPSTREAM_URL" "$PREFIX"
+  REPO_DIR="$PREFIX"
 fi
 
 echo "==> Installing usbip + Python"
@@ -72,7 +82,8 @@ SERVICE_FILE=$(mktemp)
 sed -e "s/USBIP_NODE_PORT=4820/USBIP_NODE_PORT=$PORT/" \
     -e "s|#USBIP_NODE_UPDATE_BRANCH=main|USBIP_NODE_UPDATE_BRANCH=$UPDATE_BRANCH|" \
     "$REPO_DIR/packaging/usbip-node.service" > "$SERVICE_FILE"
-if [ -n "${USBIP_NODE_UPDATE_REPO:-}" ]; then
+# Tell the running service where the real git checkout lives, unless it's the default /opt path.
+if [ "$REPO_DIR" != "$PREFIX" ]; then
   sed -i "s|#USBIP_NODE_UPDATE_REPO=|USBIP_NODE_UPDATE_REPO=$REPO_DIR|" "$SERVICE_FILE"
 fi
 mv "$SERVICE_FILE" /etc/systemd/system/usbip-node.service
