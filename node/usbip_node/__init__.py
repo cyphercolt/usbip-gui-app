@@ -4,4 +4,4 @@ Every machine runs an identical copy. Connect Android Chrome to any node's IP an
 aggregated fleet view; nodes discover each other over mDNS and orchestrate any-PC -> any-PC attach.
 """
 
-__version__ = "3.0.12"
+__version__ = "0.0.1"
