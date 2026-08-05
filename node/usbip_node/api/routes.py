@@ -403,7 +403,27 @@ def build_router(
 
     @r.post("/api/update/check", response_model=UpdateState)
     async def _update_check() -> UpdateState:
-        return await updater.check_now()
+        # Refresh this node immediately, then trigger checks on all reachable peers in the background.
+        # Peers will update their own state; the next /api/fleet poll will pick up the fresh status.
+        local_state = await updater.check_now()
+        fleet, id_to_url = await _fleet_now()
+        peer_targets = [
+            id_to_url[n.info.node_id]
+            for n in fleet
+            if n.info.node_id != cfg.node_id
+            and n.info.node_id in id_to_url
+            and n.info.paired
+            and n.info.reachable
+        ]
+        if peer_targets:
+            async with httpx.AsyncClient() as client:
+                asyncio.create_task(
+                    asyncio.gather(*[
+                        post_command(client, url, "/api/local/update/check", {}, cfg.node_id, cfg.node_key)
+                        for url in peer_targets
+                    ], return_exceptions=True)
+                )
+        return local_state
 
     @r.post("/api/update/start", response_model=UpdateState)
     async def _update_start() -> UpdateState:
