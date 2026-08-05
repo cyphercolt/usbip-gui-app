@@ -92,6 +92,26 @@ async def post_command(
         return CommandResponse(ok=False, message=f"bad response from {url}: {e}")
 
 
+async def peer_get_json(
+    client: httpx.AsyncClient,
+    url: str,
+    path: str,
+    node_id: str,
+    node_key: str,
+) -> dict | None:
+    """Raw GET to a peer endpoint (node-to-node, identity headers). Returns JSON dict or None."""
+    try:
+        resp = await client.get(
+            f"{url}{path}",
+            headers=identity_headers(node_id, node_key),
+            timeout=_TIMEOUT,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 async def gather_fleet(
     self_state: NodeState, peer_urls: list[str], node_id: str, node_key: str
 ) -> tuple[list[NodeState], dict[str, str]]:

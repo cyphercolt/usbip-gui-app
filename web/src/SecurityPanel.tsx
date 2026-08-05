@@ -323,6 +323,23 @@ export default function SecurityPanel({
       {auth && <AccessSection auth={auth} notify={notify} onChanged={onChanged} />}
       <Appearance />
 
+      <section className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 mb-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-medium">🔄 Updates</div>
+            <p className="text-xs text-white/50 mt-1 max-w-md">
+              Check versions and update every paired machine from one place.
+            </p>
+          </div>
+          <button
+            onClick={() => (location.hash = "#/updates")}
+            className="rounded-xl bg-sky-500/80 hover:bg-sky-500 px-4 py-2 text-sm font-medium ring-1 ring-sky-400/30"
+          >
+            Open Updates
+          </button>
+        </div>
+      </section>
+
       {/* mode */}
       <section className="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 mb-4">
         <div className="flex items-center justify-between">

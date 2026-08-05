@@ -57,8 +57,26 @@ export interface SetAuthResponse {
   otpauth_uri: string | null;
 }
 
+export interface UpdateState {
+  node_id: string;
+  current_version: string;
+  installed_commit: string;
+  installed_commit_time: string | null;
+  remote_commit: string | null;
+  remote_commit_time: string | null;
+  branch: string;
+  update_available: boolean;
+  update_running: boolean;
+  update_stage: string;
+  update_message: string;
+  last_check: string | null;
+  can_update: boolean;
+  rollback_tag: string | null;
+}
+
 export interface NodeState {
   info: NodeInfo;
   shareable: Device[];
   attached: AttachedDevice[];
+  update?: UpdateState;
 }

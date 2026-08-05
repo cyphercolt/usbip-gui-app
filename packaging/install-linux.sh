@@ -8,6 +8,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX=/opt/usbip-node
 PORT="${USBIP_NODE_PORT:-4820}"
+UPDATE_BRANCH="${USBIP_NODE_UPDATE_BRANCH:-main}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Please run as root: sudo $0" >&2
@@ -47,10 +48,13 @@ python3 -m venv "$PREFIX/.venv"
 "$PREFIX/.venv/bin/pip" install --quiet "$REPO_DIR/node"
 rm -rf "$PREFIX/web"
 cp -r "$REPO_DIR/web/dist" "$PREFIX/web"
+cp "$REPO_DIR/packaging/update.sh" "$PREFIX/update.sh"
+chmod +x "$PREFIX/update.sh"
 
 echo "==> Installing systemd service"
-sed "s/USBIP_NODE_PORT=4820/USBIP_NODE_PORT=$PORT/" "$REPO_DIR/packaging/usbip-node.service" \
-  > /etc/systemd/system/usbip-node.service
+sed -e "s/USBIP_NODE_PORT=4820/USBIP_NODE_PORT=$PORT/" \
+    -e "s|#USBIP_NODE_UPDATE_BRANCH=main|USBIP_NODE_UPDATE_BRANCH=$UPDATE_BRANCH|" \
+    "$REPO_DIR/packaging/usbip-node.service" > /etc/systemd/system/usbip-node.service
 systemctl daemon-reload
 systemctl enable usbip-node.service
 systemctl restart usbip-node.service   # restart so re-running this script also UPDATES a live node

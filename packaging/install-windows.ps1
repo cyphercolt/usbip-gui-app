@@ -41,11 +41,17 @@ if (-not (Test-Path "$RepoDir\web\dist\index.html")) {
     throw "web\dist missing. It ships prebuilt on the branch — run 'git pull', or build with 'cd web; npm install; npm run build'."
 }
 
+$UpdateBranch = $env:USBIP_NODE_UPDATE_BRANCH
+if (-not $UpdateBranch) { $UpdateBranch = "main" }
+
 Write-Host "==> Creating Python venv + installing usbip-node"
 python -m venv $Venv
 & "$Venv\Scripts\python.exe" -m pip install --quiet --upgrade pip
 # Editable install so the node finds the committed web\dist via its own path.
 & "$Venv\Scripts\python.exe" -m pip install --quiet -e "$RepoDir\node"
+
+Write-Host "==> Copying updater"
+Copy-Item "$RepoDir\packaging\update.ps1" "$RepoDir\update.ps1" -Force | Out-Null
 
 Write-Host "==> Opening firewall port $Port"
 if (-not (Get-NetFirewallRule -DisplayName "usbip-node" -ErrorAction SilentlyContinue)) {
@@ -68,4 +74,5 @@ Write-Host ""
 Write-Host "==> Done. usbip-node is running (as SYSTEM, starts on boot)."
 Write-Host "    Open from any phone/PC on the LAN:  http://$ip`:$Port"
 Write-Host "    Manage: Task Scheduler -> usbip-node   (Start/Stop/Disable)"
-Write-Host "    Update later: git pull, then re-run this script."
+Write-Host "    Update branch: $UpdateBranch"
+Write-Host "    Update later: use the Updates page, or run .\update.ps1"

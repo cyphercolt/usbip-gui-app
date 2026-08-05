@@ -33,12 +33,32 @@ class NodeInfo(BaseModel):
     paired: bool = True  # in locked mode, false = discovered but not yet approved
 
 
+class UpdateState(BaseModel):
+    """Update/version status for one node."""
+
+    node_id: str
+    current_version: str = ""
+    installed_commit: str = ""
+    installed_commit_time: str | None = None
+    remote_commit: str | None = None
+    remote_commit_time: str | None = None
+    branch: str = "main"
+    update_available: bool = False
+    update_running: bool = False
+    update_stage: str = "idle"  # idle, fetching, pulling, installing, restarting, error
+    update_message: str = ""
+    last_check: str | None = None
+    can_update: bool = False
+    rollback_tag: str | None = None
+
+
 class NodeState(BaseModel):
     """Everything a fleet card needs about one machine."""
 
     info: NodeInfo
     shareable: list[Device] = []
     attached: list[AttachedDevice] = []
+    update: UpdateState | None = None
 
 
 class CommandResponse(BaseModel):

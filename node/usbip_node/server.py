@@ -19,12 +19,13 @@ from .discovery.mdns import Discovery
 from .events import StateBus
 from .peers import PeerRegistry
 from .trust import TrustStore
+from .updater import Updater
 from .webauth import COOKIE, WebAuthStore
 
 # Browser paths that must stay reachable without a session so the login page can load / you can log in.
 _OPEN_PATHS = {"/health", "/api/identity", "/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 # Node-to-node paths — authenticated by node identity (X-Node-Key), not the web session.
-_NODE_PREFIXES = ("/api/local/",)
+_NODE_PREFIXES = ("/api/local/", "/api/update/")
 _NODE_PATHS = {"/api/state", "/api/pair/request", "/api/pair/confirm", "/api/auth/sync"}
 
 
@@ -62,6 +63,7 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     trust = TrustStore()
     autoreconnect = AutoReconnectStore()
     webauth = WebAuthStore()
+    updater = Updater(cfg.node_id, __version__)
 
     def peer_urls() -> list[str]:
         """Manual registry + mDNS-discovered peers, de-duplicated (fleet dedupes by node_id too)."""
@@ -71,9 +73,17 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     async def lifespan(_: FastAPI):
         if os.environ.get("USBIP_NODE_DISABLE_MDNS") != "1":
             await discovery.start_safe()
-        task = asyncio.create_task(run_loop(cfg, autoreconnect, bus))
+        tasks = [
+            asyncio.create_task(run_loop(cfg, autoreconnect, bus)),
+            asyncio.create_task(updater.run()),
+        ]
         yield
-        task.cancel()
+        for task in tasks:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await discovery.close()
 
     app = FastAPI(title="usbip-node", version=__version__, lifespan=lifespan)
@@ -84,6 +94,7 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
     app.state.trust = trust
     app.state.autoreconnect = autoreconnect
     app.state.webauth = webauth
+    app.state.updater = updater
 
     @app.middleware("http")
     async def enforce_login(request: Request, call_next):
@@ -92,7 +103,7 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
                 return JSONResponse({"detail": "login required"}, status_code=401)
         return await call_next(request)
 
-    app.include_router(build_router(cfg, bus, registry, peer_urls, trust, autoreconnect, webauth))
+    app.include_router(build_router(cfg, bus, registry, peer_urls, trust, autoreconnect, webauth, updater))
 
     web_dist = _find_web_dist()
     if web_dist is not None:

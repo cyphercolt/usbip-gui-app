@@ -5,6 +5,7 @@ import { useFullscreen } from "./helpers";
 import LoginScreen from "./LoginScreen";
 import MachineView from "./MachineView";
 import SecurityPanel from "./SecurityPanel";
+import UpdatesPanel from "./UpdatesPanel";
 import type { AuthStatus, NodeState, SecurityState } from "./types";
 
 interface Toast {
@@ -19,6 +20,7 @@ export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showUpdates, setShowUpdates] = useState(false);
   const [live, setLive] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [isFs, toggleFs] = useFullscreen();
@@ -74,19 +76,26 @@ export default function App() {
     };
   }, [refresh]);
 
-  // Hash routing: #/m/<id> machine view, #/settings, else fleet. Enables deep links + Android back.
+  // Hash routing: #/m/<id> machine view, #/settings, #/updates, else fleet. Enables deep links + Android back.
   useEffect(() => {
     const apply = () => {
       const h = location.hash;
       if (h.startsWith("#/m/")) {
         setSelected(decodeURIComponent(h.slice(4)));
         setShowSecurity(false);
+        setShowUpdates(false);
       } else if (h === "#/settings") {
         setShowSecurity(true);
+        setShowUpdates(false);
+        setSelected(null);
+      } else if (h === "#/updates") {
+        setShowUpdates(true);
+        setShowSecurity(false);
         setSelected(null);
       } else {
         setSelected(null);
         setShowSecurity(false);
+        setShowUpdates(false);
       }
     };
     apply();
@@ -96,6 +105,9 @@ export default function App() {
 
   const selectedNode = selected ? fleet.find((n) => n.info.node_id === selected) : undefined;
   const pending = security?.pending.length ?? 0;
+  const updateCount = fleet.filter(
+    (n) => n.update?.update_available && n.update?.can_update && !n.update?.update_running && n.info.reachable,
+  ).length;
 
   if (auth?.enabled && !auth.authed) {
     return <LoginScreen status={auth} onLoggedIn={refresh} />;
@@ -112,6 +124,20 @@ export default function App() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              location.hash = showUpdates ? "#/" : "#/updates";
+            }}
+            className="relative rounded-xl bg-white/10 hover:bg-white/15 active:scale-95 transition px-3 py-2 text-sm font-medium ring-1 ring-white/10"
+            title="Updates"
+          >
+            🔄
+            {updateCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1 rounded-full bg-emerald-500 text-[11px] font-bold grid place-items-center">
+                {updateCount}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => {
               location.hash = showSecurity ? "#/" : "#/settings";
@@ -135,7 +161,16 @@ export default function App() {
         </div>
       </header>
 
-      {showSecurity && security ? (
+      {showUpdates ? (
+        <UpdatesPanel
+          fleet={fleet}
+          notify={notify}
+          onChanged={refresh}
+          onBack={() => {
+            location.hash = "#/";
+          }}
+        />
+      ) : showSecurity && security ? (
         <SecurityPanel
           security={security}
           auth={auth}

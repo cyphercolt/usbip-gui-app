@@ -54,11 +54,13 @@ from ..core.models import (
     SecurityState,
     SetAuthRequest,
     SetAuthResponse,
+    UpdateState,
 )
 from ..events import StateBus
-from ..hub import gather_fleet, identity_headers, post_command
+from ..hub import gather_fleet, identity_headers, peer_get_json, post_command
 from ..peers import PeerRegistry
 from ..trust import LOCKED, OPEN, TrustStore
+from ..updater import Updater
 from ..webauth import COOKIE, WebAuthStore
 
 
@@ -93,6 +95,7 @@ def build_router(
     trust: TrustStore,
     auto_store: AutoReconnectStore,
     webauth: WebAuthStore,
+    updater: Updater,
 ) -> APIRouter:
     r = APIRouter()
 
@@ -127,6 +130,7 @@ def build_router(
             info=node_info(),
             shareable=local.list_shareable(),
             attached=attached,
+            update=updater.state,
         )
 
     def our_pair_msg() -> dict:
@@ -214,9 +218,39 @@ def build_router(
     # ---- hub layer (browser-facing) ----
     _recent: dict[str, tuple[float, NodeState]] = {}  # smooths transient blips in the fleet display
 
+    async def _fleet_with_updates() -> list[NodeState]:
+        fleet, id_to_url = await _fleet_now()
+        # Fetch update status from each peer and merge it into their NodeState.
+        peer_nodes = [
+            n for n in fleet
+            if n.info.node_id != cfg.node_id and n.info.node_id in id_to_url
+        ]
+        async with httpx.AsyncClient() as client:
+            results = await asyncio.gather(*[
+                peer_get_json(
+                    client, id_to_url[n.info.node_id], "/api/update/status",
+                    cfg.node_id, cfg.node_key,
+                )
+                for n in peer_nodes
+            ]) if peer_nodes else []
+        peer_state = {
+            n.info.node_id: data
+            for n, data in zip(peer_nodes, results)
+            if data
+        }
+        for n in fleet:
+            if n.info.node_id == cfg.node_id:
+                n.update = updater.state
+            elif n.info.node_id in peer_state:
+                try:
+                    n.update = UpdateState.model_validate(peer_state[n.info.node_id])
+                except ValueError:
+                    n.update = None
+        return fleet
+
     @r.get("/api/fleet", response_model=list[NodeState])
     async def _fleet() -> list[NodeState]:
-        fleet, _ = await _fleet_now()
+        fleet = await _fleet_with_updates()
         now = time.monotonic()
         present = {n.info.node_id for n in fleet}
         for n in fleet:
@@ -360,6 +394,77 @@ def build_router(
             return CommandResult(True, "", "", 0)
 
         return await _run_on(node_id, _local, "/api/local/autoreconnect", req.model_dump())
+
+    # ---- update / fleet self-update ----
+    @r.get("/api/update/status", response_model=UpdateState)
+    def _update_status(_: None = Depends(node_auth)) -> UpdateState:
+        return updater.state
+
+    @r.post("/api/update/check", response_model=UpdateState)
+    async def _update_check(_: None = Depends(node_auth)) -> UpdateState:
+        return await updater.check_now()
+
+    @r.post("/api/update/start", response_model=UpdateState)
+    async def _update_start(_: None = Depends(node_auth)) -> UpdateState:
+        return await updater.start_update()
+
+    @r.get("/api/node/{node_id}/update/status", response_model=UpdateState)
+    async def _node_update_status(node_id: str) -> UpdateState:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            return updater.state
+        if not url:
+            raise HTTPException(status_code=404, detail="node not found")
+        async with httpx.AsyncClient() as client:
+            data = await peer_get_json(client, url, "/api/update/status", cfg.node_id, cfg.node_key)
+        if data is None:
+            raise HTTPException(status_code=502, detail="peer update status unavailable")
+        return UpdateState.model_validate(data)
+
+    @r.post("/api/node/{node_id}/update/start", response_model=UpdateState)
+    async def _node_update_start(node_id: str) -> UpdateState:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            return await updater.start_update()
+        if not url:
+            raise HTTPException(status_code=404, detail="node not found")
+        async with httpx.AsyncClient() as client:
+            resp = await post_command(
+                client, url, "/api/update/start", {}, cfg.node_id, cfg.node_key,
+            )
+        if not resp.ok:
+            raise HTTPException(status_code=502, detail=resp.message)
+        return UpdateState.model_validate(resp.model_dump())
+
+    @r.post("/api/update/start-all", response_model=CommandResponse)
+    async def _update_start_all() -> CommandResponse:
+        fleet, id_to_url = await _fleet_now()
+        targets = [
+            (n.info.node_id, id_to_url.get(n.info.node_id))
+            for n in fleet
+            if n.info.node_id != cfg.node_id
+            and n.info.node_id in id_to_url
+            and n.info.paired
+            and n.info.reachable
+        ]
+        started: list[str] = []
+        failed: list[str] = []
+        async with httpx.AsyncClient() as client:
+            results = await asyncio.gather(*[
+                post_command(client, url, "/api/update/start", {}, cfg.node_id, cfg.node_key)
+                for _, url in targets
+            ]) if targets else []
+        for (nid, _), res in zip(targets, results):
+            if res.ok:
+                started.append(nid)
+            else:
+                failed.append(f"{nid}: {res.message}")
+        # Don't start self via proxy; the user is already on a node, so self is handled by the hub
+        # if they want. start-all intentionally updates peers only, keeping the page live.
+        return CommandResponse(
+            ok=len(failed) == 0,
+            message=f"started {len(started)} node(s); failed: {', '.join(failed) if failed else 'none'}",
+        )
 
     # ---- security / pairing ----
     @r.get("/api/security", response_model=SecurityState)

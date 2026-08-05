@@ -1,6 +1,13 @@
 // Same-origin API client. The page is served by a node; that node acts as the hub and forwards
 // per-node commands to the right peer, so the browser only ever talks to this one origin.
-import type { AuthStatus, CommandResponse, NodeState, SecurityState, SetAuthResponse } from "./types";
+import type {
+  AuthStatus,
+  CommandResponse,
+  NodeState,
+  SecurityState,
+  SetAuthResponse,
+  UpdateState,
+} from "./types";
 
 async function post(path: string, body?: unknown): Promise<CommandResponse> {
   const res = await fetch(path, {
@@ -57,6 +64,29 @@ export const orchestrateAttach = (sourceNodeId: string, busid: string, destNodeI
     busid,
     dest_node_id: destNodeId,
   });
+
+// ---- updates ----
+export async function getUpdateStatus(): Promise<UpdateState> {
+  const res = await fetch("/api/update/status");
+  if (!res.ok) throw new Error(`update status: ${res.status}`);
+  return res.json();
+}
+
+export async function checkUpdates(): Promise<UpdateState> {
+  const res = await fetch("/api/update/check", { method: "POST" });
+  if (!res.ok) throw new Error(`update check: ${res.status}`);
+  return res.json();
+}
+
+export async function startUpdate(nodeId: string): Promise<UpdateState> {
+  const res = await fetch(`/api/node/${nodeId}/update/start`, { method: "POST" });
+  if (!res.ok) throw new Error(`update start: ${res.status}`);
+  return res.json();
+}
+
+export async function startAllUpdates(): Promise<CommandResponse> {
+  return post("/api/update/start-all", {});
+}
 
 // ---- security / pairing ----
 export async function getSecurity(): Promise<SecurityState> {
