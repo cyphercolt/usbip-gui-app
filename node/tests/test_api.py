@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 
 from usbip_node.config import NodeConfig
 from usbip_node.core import validate
+from usbip_node.core.models import CommandResponse, NodeInfo, NodeState
+from usbip_node.core.proc import CommandResult
 from usbip_node.server import create_app
 
 
@@ -148,3 +150,68 @@ def test_host_validation():
     assert validate.is_valid_host("192.168.2.216")
     assert validate.is_valid_host("pi.local")
     assert not validate.is_valid_host("bad host!")
+
+
+def test_orchestrate_uses_api_url_host_not_advertise_host(client, monkeypatch):
+    """Regression for 3-device 'tcp connect' failures: the destination must attach to the
+    address we actually reached the source API on, not the source's self-reported advertise_host.
+    A machine with multiple interfaces may advertise an IP a peer cannot reach for usbip."""
+    import usbip_node.api.routes as routes
+    import usbip_node.core.local as local
+
+    client.post("/api/security/mode", json={"mode": "open"})
+    client.post("/api/peers", json={"url": "http://192.168.2.5:4820"})
+
+    captured: dict = {}
+
+    def fake_bind(busid: str) -> CommandResult:
+        captured["bind_busid"] = busid
+        return CommandResult(True, "", "", 0)
+
+    def fake_attach(remote_host: str, busid: str) -> CommandResult:
+        captured["attach_host"] = remote_host
+        captured["attach_busid"] = busid
+        return CommandResult(True, "", "", 0)
+
+    async def fake_post_command(*args, **kwargs) -> CommandResponse:
+        captured["post_path"] = args[2]
+        captured["post_payload"] = args[3]
+        return CommandResponse(ok=True, message="bound")
+
+    monkeypatch.setattr(local, "bind", fake_bind)
+    monkeypatch.setattr(local, "attach", fake_attach)
+    monkeypatch.setattr(routes, "post_command", fake_post_command)
+
+    async def fake_gather(self_state, peer_urls, node_id, node_key):
+        fleet = [
+            self_state,
+            NodeState(
+                info=NodeInfo(
+                    node_id="peer1",
+                    display_name="peer",
+                    os_name="linux",
+                    version="3.0.0",
+                    host="10.0.0.5",  # advertised host; intentionally unreachable from dest
+                    port=4820,
+                    reachable=True,
+                    paired=True,
+                ),
+                shareable=[],
+                attached=[],
+            ),
+        ]
+        return fleet, {"peer1": "http://192.168.2.5:4820"}
+
+    monkeypatch.setattr(routes, "gather_fleet", fake_gather)
+
+    r = client.post(
+        "/api/attach",
+        json={"source_node_id": "peer1", "busid": "2-1", "dest_node_id": "abc123"},
+    )
+    assert r.status_code == 200, r.text
+    assert captured.get("post_path") == "/api/local/bind"
+    assert captured.get("post_payload") == {"busid": "2-1"}
+    assert captured.get("attach_busid") == "2-1"
+    assert captured.get("attach_host") == "192.168.2.5", (
+        f"expected the API-reachable host 192.168.2.5, got {captured.get('attach_host')!r}"
+    )

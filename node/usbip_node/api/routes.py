@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import Callable
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import (
@@ -72,6 +73,16 @@ def _bind_ok(resp: CommandResponse) -> bool:
         return True
     m = resp.message.lower()
     return "already bound" in m or "already shared" in m
+
+
+def _api_host(url: str | None) -> str | None:
+    """Hostname from a peer API URL. Used as the usbip attach target because it is the address
+    the destination already used successfully to talk to the source's API; the source's self-
+    reported advertise_host may be on a different/unreachable interface."""
+    if not url:
+        return None
+    host = urlparse(url).hostname
+    return host if host else None
 
 
 def build_router(
@@ -232,6 +243,11 @@ def build_router(
         if source is None or dest is None:
             raise HTTPException(status_code=404, detail="source or destination node not found")
 
+        # Use the address we actually reach the source API on for the usbip attach target. The
+        # source's advertise_host can be on a different subnet/interface (Wi-Fi vs Ethernet, VPN,
+        # Docker, etc.) and fail with "tcp connect" even though API calls succeed.
+        source_attach_host = _api_host(id_to_url.get(source.info.node_id)) or source.info.host
+
         async with httpx.AsyncClient() as client:
             if source.info.node_id == cfg.node_id:
                 bind_res = _to_response(local.bind(req.busid))
@@ -244,11 +260,11 @@ def build_router(
                 return CommandResponse(ok=False, message=f"bind on source failed: {bind_res.message}")
 
             if dest.info.node_id == cfg.node_id:
-                attach_res = _to_response(local.attach(source.info.host, req.busid))
+                attach_res = _to_response(local.attach(source_attach_host, req.busid))
             else:
                 attach_res = await post_command(
                     client, id_to_url[dest.info.node_id], "/api/local/attach",
-                    {"remote_host": source.info.host, "busid": req.busid}, cfg.node_id, cfg.node_key,
+                    {"remote_host": source_attach_host, "busid": req.busid}, cfg.node_id, cfg.node_key,
                 )
 
         bus.publish()
