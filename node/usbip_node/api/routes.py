@@ -465,12 +465,19 @@ def build_router(
         if not url:
             raise HTTPException(status_code=404, detail="node not found")
         async with httpx.AsyncClient() as client:
-            resp = await post_command(
-                client, url, "/api/local/update/check", {}, cfg.node_id, cfg.node_key,
-            )
-        if not resp.ok:
-            raise HTTPException(status_code=502, detail=resp.message)
-        return UpdateState.model_validate(resp.model_dump())
+            try:
+                resp = await client.post(
+                    f"{url}/api/local/update/check",
+                    json={},
+                    headers=identity_headers(cfg.node_id, cfg.node_key),
+                    timeout=httpx.Timeout(20.0),
+                )
+                resp.raise_for_status()
+                return UpdateState.model_validate(resp.json())
+            except httpx.HTTPError as e:
+                raise HTTPException(status_code=502, detail=f"peer unreachable: {e}")
+            except ValueError as e:
+                raise HTTPException(status_code=502, detail=f"bad response from peer: {e}")
 
     @r.post("/api/node/{node_id}/update/start", response_model=UpdateState)
     async def _node_update_start(node_id: str) -> UpdateState:
@@ -480,12 +487,19 @@ def build_router(
         if not url:
             raise HTTPException(status_code=404, detail="node not found")
         async with httpx.AsyncClient() as client:
-            resp = await post_command(
-                client, url, "/api/local/update/start", {}, cfg.node_id, cfg.node_key,
-            )
-        if not resp.ok:
-            raise HTTPException(status_code=502, detail=resp.message)
-        return UpdateState.model_validate(resp.model_dump())
+            try:
+                resp = await client.post(
+                    f"{url}/api/local/update/start",
+                    json={},
+                    headers=identity_headers(cfg.node_id, cfg.node_key),
+                    timeout=httpx.Timeout(20.0),
+                )
+                resp.raise_for_status()
+                return UpdateState.model_validate(resp.json())
+            except httpx.HTTPError as e:
+                raise HTTPException(status_code=502, detail=f"peer unreachable: {e}")
+            except ValueError as e:
+                raise HTTPException(status_code=502, detail=f"bad response from peer: {e}")
 
     @r.post("/api/update/start-all", response_model=CommandResponse)
     async def _update_start_all() -> CommandResponse:
