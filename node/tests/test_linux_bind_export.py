@@ -6,6 +6,8 @@ behavior (list_exported_busids / restart_usbipd / ensure_exportable) plus the lo
 wiring that triggers it, all without real hardware by faking the subprocess runner.
 """
 
+import time
+
 import pytest
 
 from usbip_node.core import local, usbip_linux
@@ -71,6 +73,8 @@ def fake_host(monkeypatch):
     host = _FakeHost()
     monkeypatch.setattr(usbip_linux, "_run", host.run)
     monkeypatch.setattr(local, "_DEMO", False)
+    # Default: usbipd started long before the bind -> local.bind must restart it.
+    monkeypatch.setattr(usbip_linux, "usbipd_start_epoch", lambda: 0.0)
     return host
 
 
@@ -124,8 +128,21 @@ def test_local_bind_restarts_when_bound_but_not_exported(no_sleep, fake_host, mo
     monkeypatch.setattr(usbip_linux, "_run", run)
     res = local.bind("5-1.4.4.2")
     assert res.ok
-    assert "restarted" in res.stdout
+    assert fake_host.restarted()
     assert fake_host.probes > 0
+
+
+def test_local_bind_skips_restart_when_daemon_postdates_bind(no_sleep, monkeypatch):
+    # usbipd was started after this bind (e.g. ensure_usbipd just launched it):
+    # no restart needed, and the device is already served.
+    host = _FakeHost(exported={"5-1.4.4.2"})
+    monkeypatch.setattr(usbip_linux, "_run", host.run)
+    monkeypatch.setattr(local, "_DEMO", False)
+    monkeypatch.setattr(usbip_linux, "usbipd_start_epoch", lambda: time.time() + 60)
+    res = local.bind("5-1.4.4.2")
+    assert res.ok
+    assert host.probes > 0
+    assert not host.restarted()
 
 
 def test_local_bind_does_not_probe_when_bind_fails(no_sleep, monkeypatch):

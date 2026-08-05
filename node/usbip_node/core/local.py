@@ -103,9 +103,15 @@ def bind(busid: str):
         return CommandResult(False, "", ready.stderr or "usbipd is not running", ready.code)
     r = usbip_linux.bind(busid)
     if _bind_effectively_ok(r):
-        # Binding is only half the job: usbipd must also *serve* the device to peers.
-        # Verify the daemon exports it (healing a stuck daemon if needed) so a following
-        # remote attach can't fail with "Attach Request ... failed - Request Failed".
+        # Binding is only half the job: usbipd must also *serve* the device. A daemon that
+        # started before this device was bound can list the device yet answer import
+        # requests with "Attach Request ... failed - Request Failed" -- the reliable cure
+        # is a fresh daemon whose startup scan re-reads sysfs. Restart it if it predates
+        # this bind, then verify the daemon really exports the device.
+        if (usbip_linux.usbipd_start_epoch() or 0.0) < time.time():
+            restarted = usbip_linux.restart_usbipd()
+            if not restarted.ok:
+                return CommandResult(False, "", restarted.stderr or "could not restart usbipd", restarted.code)
         r = usbip_linux.ensure_exportable(busid)
     _invalidate()
     return r

@@ -7,6 +7,7 @@ today; bind/attach are wired to real commands here and exercised for real in Pha
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import time
@@ -51,6 +52,28 @@ def ensure_usbipd() -> CommandResult:
     if not usbipd_running():
         return CommandResult(False, "", "usbipd exited right after start (needs root?)", 1)
     return CommandResult(True, "usbipd started", "", 0)
+
+
+def usbipd_start_epoch() -> float | None:
+    """Wall-clock epoch of the running usbipd's start time, or None if it isn't running."""
+    res = _run(["pgrep", "-x", "usbipd"])
+    if not res.ok or not res.stdout.strip():
+        return None
+    pid = res.stdout.strip().splitlines()[0]
+    try:
+        with open("/proc/stat") as f:
+            btime = 0
+            for line in f:
+                if line.startswith("btime "):
+                    btime = int(line.split()[1])
+                    break
+        with open(f"/proc/{pid}/stat") as f:
+            rest = f.read().rsplit(")", 1)[1].split()
+        # After the comm field (which can contain spaces and ")"), field 22 overall
+        # (starttime in clock ticks since boot) is index 19 in `rest`.
+        return btime + int(rest[19]) / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError):
+        return None
 
 
 def list_exported_busids(host: str = "127.0.0.1") -> set[str] | None:
