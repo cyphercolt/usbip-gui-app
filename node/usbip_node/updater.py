@@ -300,7 +300,11 @@ class Updater:
         except OSError:
             pass
 
-        env = {**os.environ, "USBIP_NODE_UPDATE_BRANCH": self._probe.branch}
+        env = {
+            **os.environ,
+            "USBIP_NODE_UPDATE_BRANCH": self._probe.branch,
+            "USBIP_NODE_UPDATE_REPO": str(self._probe.path),
+        }
         # Use a unique unit name so repeated clicks don't collide. Start in 1s so the
         # requesting node has time to finish its HTTP response before the service restarts.
         unit = f"usbip-node-update-{int(time.time())}"
@@ -316,6 +320,7 @@ class Updater:
                     "--property=StandardOutput=append:" + str(log),
                     "--property=StandardError=append:" + str(log),
                     "--setenv", f"USBIP_NODE_UPDATE_BRANCH={self._probe.branch}",
+                    "--setenv", f"USBIP_NODE_UPDATE_REPO={self._probe.path}",
                     str(script),
                 ],
                 stdout=subprocess.DEVNULL,
