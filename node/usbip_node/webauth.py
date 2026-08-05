@@ -48,18 +48,25 @@ class WebAuthStore:
     def __init__(self, path: Path | None = None) -> None:
         self._path = path or (state_dir() / "webauth.json")
         self._lock = threading.Lock()
-        self._data = self._load()
         self._sessions: set[str] = set()
+        self._data = self._load()
 
     def _load(self) -> dict:
         try:
-            return json.loads(self._path.read_text())
+            data = json.loads(self._path.read_text())
+            # Make sure persisted sessions are loaded back into memory on restart.
+            for token in data.get("sessions", []):
+                self._sessions.add(token)
+            return data
         except (OSError, json.JSONDecodeError):
             return {"enabled": False}
 
     def _save(self) -> None:
         try:
-            self._path.write_text(json.dumps(self._data))
+            # Persist sessions so logins survive a service restart (e.g. after an update).
+            payload = dict(self._data)
+            payload["sessions"] = sorted(self._sessions)
+            self._path.write_text(json.dumps(payload))
         except OSError:
             pass
 
@@ -125,11 +132,14 @@ class WebAuthStore:
         token = secrets.token_urlsafe(32)
         with self._lock:
             self._sessions.add(token)
+            self._save()
         return token
 
     def valid_session(self, token: str | None) -> bool:
         return bool(token) and token in self._sessions
 
     def drop_session(self, token: str | None) -> None:
-        if token:
-            self._sessions.discard(token)
+        with self._lock:
+            if token:
+                self._sessions.discard(token)
+                self._save()

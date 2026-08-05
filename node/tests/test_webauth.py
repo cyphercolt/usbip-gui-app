@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from usbip_node.config import NodeConfig
 from usbip_node.server import create_app
-from usbip_node.webauth import totp_code
+from usbip_node.webauth import WebAuthStore, totp_code
 
 
 @pytest.fixture()
@@ -56,3 +56,23 @@ def test_totp_required_when_enabled(client):
         json={"username": "colt", "password": "pw", "code": totp_code(secret)},
     )
     assert good.status_code == 200
+
+
+def test_session_survives_store_restart(tmp_path):
+    """Sessions must be persisted so a service restart doesn't force re-login."""
+    path = tmp_path / "webauth.json"
+    store = WebAuthStore(path)
+    store.set_credential("colt", "hunter2", totp_enabled=False)
+    token = store.create_session()
+    assert store.valid_session(token)
+
+    # Simulate service restart: new WebAuthStore instance reads the same file.
+    restarted = WebAuthStore(path)
+    assert restarted.valid_session(token)
+
+    # Logging out invalidates the token on the running instance and persists it,
+    # so a future restart won't accept it.
+    restarted.drop_session(token)
+    assert not restarted.valid_session(token)
+    future = WebAuthStore(path)
+    assert not future.valid_session(token)
