@@ -24,6 +24,32 @@ def usbip_available() -> bool:
     return shutil.which("usbip") is not None
 
 
+def usbipd_running() -> bool:
+    """True if a usbipd server process is already running on this machine."""
+    res = _run(["pgrep", "-x", "usbipd"])
+    return res.ok and bool(res.stdout.strip())
+
+
+def ensure_usbipd() -> CommandResult:
+    """Start the usbipd server if it isn't running already.
+
+    Exporting devices only works while usbipd is listening on :3240 -- `usbip bind` alone is
+    not enough, and peers attaching to us get "usbip: error: tcp connect" without it. Safe to
+    call repeatedly: a no-op when usbipd is already up (e.g. started by hand or by another tool
+    before this app existed, like on some Pis).
+    """
+    if usbipd_running():
+        return CommandResult(True, "usbipd already running", "", 0)
+    _run(["modprobe", "usbip_host"])  # harmless if already loaded or built into the kernel
+    started = _run(["usbipd", "-D"])  # -D: detach and run as a daemon
+    if not started.ok:
+        detail = (started.stderr or started.stdout).strip()
+        return CommandResult(False, "", f"could not start usbipd: {detail}", started.code)
+    if not usbipd_running():
+        return CommandResult(False, "", "usbipd exited right after start (needs root?)", 1)
+    return CommandResult(True, "usbipd started", "", 0)
+
+
 def list_shareable() -> list[Device]:
     """Devices on this machine that can be exported (`usbip list -l`)."""
     res = _run(["usbip", "list", "-l"])

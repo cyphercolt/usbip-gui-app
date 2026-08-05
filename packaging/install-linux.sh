@@ -4,6 +4,9 @@
 #
 # Result: the node runs on boot at http://<this-machine-ip>:4820, USB/IP works with no sudo prompts.
 set -euo pipefail
+# Log the exact failing command before set -e kills us — the updater redirects stderr into
+# /var/lib/usbip-node/update.log, so this is how we see why a GUI-driven update failed.
+trap 'rc=$?; echo "!! install-linux.sh FAILED (exit $rc) at line $LINENO: $BASH_COMMAND" >&2' ERR
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX=/opt/usbip-node
@@ -42,13 +45,20 @@ else
 fi
 
 echo "==> Installing usbip + Python"
-if command -v apt-get >/dev/null 2>&1; then
+if [ -f /run/ostree-booted ]; then
+  # Fedora Atomic (Bazzite, Silverblue, ...): packages are managed by rpm-ostree and dnf is a
+  # shim that only prints an error. usbip + python3 are already in the base image — nothing to do.
+  echo "    rpm-ostree/Atomic system detected — skipping package install"
+elif command -v apt-get >/dev/null 2>&1; then
   apt-get update -qq
   apt-get install -y usbip python3-venv python3-pip >/dev/null
 elif command -v dnf >/dev/null 2>&1; then
   dnf install -y usbip python3 python3-pip >/dev/null || dnf install -y kernel-modules-extra usbip >/dev/null || true
 else
   echo "!! Unknown package manager — install 'usbip' and python3-venv yourself, then re-run." >&2
+fi
+if ! command -v usbip >/dev/null 2>&1; then
+  echo "!! WARNING: 'usbip' not found in PATH — bind/attach will not work until it is installed" >&2
 fi
 
 echo "==> Enabling USB/IP kernel modules"

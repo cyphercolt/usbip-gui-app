@@ -17,6 +17,7 @@ import time
 
 from . import usbip_linux, usbip_windows
 from .models import AttachedDevice, Device
+from .proc import CommandResult
 
 _IS_WINDOWS = platform.system().lower().startswith("win")
 _DEMO = os.environ.get("USBIP_NODE_DEMO") == "1"
@@ -79,6 +80,12 @@ def list_attached() -> list[AttachedDevice]:
 
 
 def bind(busid: str):
+    if not _DEMO and not _IS_WINDOWS:
+        # Exporting needs the usbipd server listening on :3240, or peers fail to attach with
+        # "usbip: error: tcp connect". Start it if nothing else already did.
+        ready = usbip_linux.ensure_usbipd()
+        if not ready.ok:
+            return CommandResult(False, "", ready.stderr or "usbipd is not running", ready.code)
     r = demo.bind(busid) if _DEMO else (usbip_windows.bind(busid) if _IS_WINDOWS else usbip_linux.bind(busid))
     _invalidate()
     return r

@@ -19,6 +19,10 @@ log_json() {
     local after="${5:-}"
     local ts
     ts="$(date -Iseconds)"
+    # Keep the JSONL valid: escape backslashes and quotes (a raw " would corrupt the entry,
+    # and the web UI silently drops unparseable lines).
+    message="${message//\\/\\\\}"
+    message="${message//\"/\\\"}"
     printf '{"ts":"%s","level":"%s","stage":"%s","message":"%s","commit_before":"%s","commit_after":"%s"}\n' \
         "$ts" "$level" "$stage" "$message" "$before" "$after" >> "$JSONL_FILE"
 }
@@ -64,8 +68,13 @@ log_json "info" "pulling" "Repo reset to origin/$BRANCH" "$before_commit" "$afte
 
 log_text "==> Re-installing service"
 export USBIP_NODE_UPDATE_BRANCH="$BRANCH"
-if ! packaging/install-linux.sh >> "$LOG_FILE" 2>&1; then
-    log_json "error" "error" "install-linux.sh failed"
+# Capture the install output so a failure's last line (install-linux.sh's ERR trap names the
+# exact command that died) shows up in the web UI log, not just in update.log.
+install_out="$(packaging/install-linux.sh 2>&1)" && install_rc=0 || install_rc=$?
+printf '%s\n' "$install_out" >> "$LOG_FILE"
+if [ "$install_rc" -ne 0 ]; then
+    last_line="$(printf '%s\n' "$install_out" | tail -1)"
+    log_json "error" "error" "install-linux.sh failed (exit $install_rc): $last_line"
     exit 1
 fi
 

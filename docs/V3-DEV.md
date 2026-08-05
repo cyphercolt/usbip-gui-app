@@ -50,6 +50,11 @@ sudo packaging/install-linux.sh      # installs usbip + a root systemd service o
 The service runs as root, so `usbip` bind/attach need **no sudo password**. Machines auto-discover
 each other via mDNS — the manual "+ Add a machine" is only a fallback (other subnet / mDNS blocked).
 
+Exporting also needs the `usbipd` server listening on :3240 (without it, peers attaching to this
+machine fail with `usbip: error: tcp connect`). The node starts it for you — at startup and before
+every bind it checks `pgrep -x usbipd` and runs `usbipd -D` only if nothing is listening, so a
+usbipd you already run yourself (e.g. on a Pi) is left alone.
+
 ### Windows (untested on hardware yet)
 
 Needs upstream tools: **usbipd-win** (`winget install usbipd`, to share devices) and **usbip-win2**

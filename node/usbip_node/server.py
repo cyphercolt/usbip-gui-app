@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import platform
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -71,6 +72,12 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        if platform.system() != "Windows" and os.environ.get("USBIP_NODE_DEMO") != "1":
+            # Peers can only attach to our exports while usbipd is up; make sure of it at boot.
+            from .core import usbip_linux
+
+            res = await asyncio.to_thread(usbip_linux.ensure_usbipd)
+            print(f"usbip-node: usbipd check: {res.stdout or res.stderr}", flush=True)
         if os.environ.get("USBIP_NODE_DISABLE_MDNS") != "1":
             await discovery.start_safe()
         tasks = [
