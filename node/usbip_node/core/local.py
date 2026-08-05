@@ -79,14 +79,34 @@ def list_attached() -> list[AttachedDevice]:
     return _cached("attached", usbip_linux.list_attached)
 
 
+def _bind_effectively_ok(res: CommandResult) -> bool:
+    """A bind is useful if it succeeded OR the device was already bound/shared."""
+    if res.ok:
+        return True
+    m = (res.stderr + res.stdout).lower()
+    return "already bound" in m or "already shared" in m
+
+
 def bind(busid: str):
-    if not _DEMO and not _IS_WINDOWS:
-        # Exporting needs the usbipd server listening on :3240, or peers fail to attach with
-        # "usbip: error: tcp connect". Start it if nothing else already did.
-        ready = usbip_linux.ensure_usbipd()
-        if not ready.ok:
-            return CommandResult(False, "", ready.stderr or "usbipd is not running", ready.code)
-    r = demo.bind(busid) if _DEMO else (usbip_windows.bind(busid) if _IS_WINDOWS else usbip_linux.bind(busid))
+    if _DEMO:
+        r = demo.bind(busid)
+        _invalidate()
+        return r
+    if _IS_WINDOWS:
+        r = usbip_windows.bind(busid)
+        _invalidate()
+        return r
+    # Exporting needs the usbipd server listening on :3240, or peers fail to attach with
+    # "usbip: error: tcp connect". Start it if nothing else already did.
+    ready = usbip_linux.ensure_usbipd()
+    if not ready.ok:
+        return CommandResult(False, "", ready.stderr or "usbipd is not running", ready.code)
+    r = usbip_linux.bind(busid)
+    if _bind_effectively_ok(r):
+        # Binding is only half the job: usbipd must also *serve* the device to peers.
+        # Verify the daemon exports it (healing a stuck daemon if needed) so a following
+        # remote attach can't fail with "Attach Request ... failed - Request Failed".
+        r = usbip_linux.ensure_exportable(busid)
     _invalidate()
     return r
 

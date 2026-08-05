@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import time
 
 from . import validate
 from .models import AttachedDevice, Device
@@ -18,6 +19,8 @@ from .proc import run as _run
 _BUSID_LINE = re.compile(r"^\s*-\s*busid\s+(\S+)\s*\((\S+)\)")
 _PORT_LINE = re.compile(r"^Port\s+(\d+):")
 _REMOTE_URL = re.compile(r"usbip://([^:/]+)")
+# Busid lines in `usbip list -r` output: "     5-1.4.4.2: Valve Software : ...".
+_EXPORTED_BUSID = re.compile(r"^\s*(\d+-[\d.]+)\s*:")
 
 
 def usbip_available() -> bool:
@@ -48,6 +51,81 @@ def ensure_usbipd() -> CommandResult:
     if not usbipd_running():
         return CommandResult(False, "", "usbipd exited right after start (needs root?)", 1)
     return CommandResult(True, "usbipd started", "", 0)
+
+
+def list_exported_busids(host: str = "127.0.0.1") -> set[str] | None:
+    """Busids usbipd currently reports as attachable to clients.
+
+    Uses the same OP_REQ_DEVLIST exchange a remote `usbip attach` performs, so this is
+    exactly what a peer will see. Returns None when the daemon itself can't be queried
+    (down/unreachable) -- distinct from an empty set (daemon is up but exports nothing).
+    """
+    res = _run(["usbip", "list", "-r", host])
+    if not res.ok:
+        return None
+    busids: set[str] = set()
+    for raw in (res.stdout + "\n" + res.stderr).splitlines():
+        m = _EXPORTED_BUSID.match(raw)
+        if m:
+            busids.add(m.group(1))
+    return busids
+
+
+def restart_usbipd() -> CommandResult:
+    """Kill and restart the usbipd daemon.
+
+    Workaround for usbipd getting stuck: when a client disappears without a clean detach
+    (reboot, network drop), the per-export child and the kernel-side 'usbip_sockfd' state
+    can linger, and every later attach then fails with "Attach Request ... failed -
+    Request Failed". Killing the daemon (and its per-export children) releases that
+    state; the fresh daemon re-scans sysfs at startup and re-exports everything still
+    bound to usbip-host -- kernel-side bindings survive, no rebind needed. Any device
+    legitimately attached right now is disconnected, but we only restart when the
+    daemon's own export list is already wrong, i.e. attaching was going to fail anyway.
+    """
+    _run(["pkill", "-x", "usbipd"])
+    for _ in range(20):
+        if not usbipd_running():
+            break
+        time.sleep(0.1)
+    if usbipd_running():
+        # A stubborn export-serving child ignored SIGTERM; force it so the port frees up.
+        _run(["pkill", "-9", "-x", "usbipd"])
+        for _ in range(20):
+            if not usbipd_running():
+                break
+            time.sleep(0.1)
+    return ensure_usbipd()
+
+
+def ensure_exportable(busid: str) -> CommandResult:
+    """Make sure usbipd will actually serve `busid` to a remote attach.
+
+    `usbip bind` only rewrites sysfs; the *daemon* is what answers attach requests, and
+    when its view is off (stuck export from a dead client, refresh hiccup) the peer fails
+    later with the cryptic "Attach Request ... failed - Request Failed". Probe the
+    daemon's export list; if the device is missing, restart usbipd once and re-check.
+    Returns ok=True only when the daemon itself confirms the device is attachable.
+    """
+    for _ in range(3):
+        busids = list_exported_busids()
+        if busids is not None and busid in busids:
+            return CommandResult(True, f"{busid} bound and exported", "", 0)
+        time.sleep(0.4)
+    restarted = restart_usbipd()
+    if not restarted.ok:
+        return CommandResult(False, "", restarted.stderr or "could not restart usbipd", restarted.code)
+    for _ in range(3):
+        busids = list_exported_busids()
+        if busids is not None and busid in busids:
+            return CommandResult(True, f"{busid} bound and exported (usbipd restarted)", "", 0)
+        time.sleep(0.4)
+    return CommandResult(
+        False, "",
+        f"{busid} is bound but usbipd does not export it, even after a daemon restart; "
+        "attaching from a peer would fail",
+        1,
+    )
 
 
 def list_shareable() -> list[Device]:
