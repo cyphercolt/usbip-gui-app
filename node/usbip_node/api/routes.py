@@ -416,13 +416,14 @@ def build_router(
             and n.info.reachable
         ]
         if peer_targets:
-            async with httpx.AsyncClient() as client:
-                asyncio.create_task(
-                    asyncio.gather(*[
+            async def _poke_peers(urls: list[str]) -> None:
+                async with httpx.AsyncClient() as client:
+                    await asyncio.gather(*[
                         post_command(client, url, "/api/local/update/check", {}, cfg.node_id, cfg.node_key)
-                        for url in peer_targets
+                        for url in urls
                     ], return_exceptions=True)
-                )
+
+            asyncio.create_task(_poke_peers(peer_targets))
         return local_state
 
     @r.post("/api/update/start", response_model=UpdateState)
