@@ -82,10 +82,10 @@ SERVICE_FILE=$(mktemp)
 sed -e "s/USBIP_NODE_PORT=4820/USBIP_NODE_PORT=$PORT/" \
     -e "s|#USBIP_NODE_UPDATE_BRANCH=main|USBIP_NODE_UPDATE_BRANCH=$UPDATE_BRANCH|" \
     "$REPO_DIR/packaging/usbip-node.service" > "$SERVICE_FILE"
-# Tell the running service where the real git checkout lives, unless it's the default /opt path.
-if [ "$REPO_DIR" != "$PREFIX" ]; then
-  sed -i "s|#USBIP_NODE_UPDATE_REPO=|USBIP_NODE_UPDATE_REPO=$REPO_DIR|" "$SERVICE_FILE"
-fi
+# Tell the running service where the real git checkout lives. We always set this
+# so the updater can find the repo even when the install target /opt/usbip-node
+# is not itself a git checkout.
+sed -i "s|#USBIP_NODE_UPDATE_REPO=|USBIP_NODE_UPDATE_REPO=$REPO_DIR|" "$SERVICE_FILE"
 mv "$SERVICE_FILE" /etc/systemd/system/usbip-node.service
 chmod 644 /etc/systemd/system/usbip-node.service
 systemctl daemon-reload
