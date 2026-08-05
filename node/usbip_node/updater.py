@@ -12,6 +12,7 @@ import dataclasses
 import os
 import platform
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -289,6 +290,7 @@ class Updater:
 
     def _trigger_linux_update(self) -> None:
         script = self._probe.path / "packaging" / "update.sh"
+        log = _linux_state_path() / "update.log"
         # Write a request marker so the helper can log who requested it.
         marker = _linux_state_path() / "update-request.json"
         try:
@@ -298,17 +300,22 @@ class Updater:
         except OSError:
             pass
 
-        env_branch = f"USBIP_NODE_UPDATE_BRANCH={self._probe.branch}"
+        env = {**os.environ, "USBIP_NODE_UPDATE_BRANCH": self._probe.branch}
+        # Use a unique unit name so repeated clicks don't collide. Start in 1s so the
+        # requesting node has time to finish its HTTP response before the service restarts.
+        unit = f"usbip-node-update-{int(time.time())}"
         # Prefer systemd-run to detach from the node process. If unavailable, fall back to
         # nohup so the shell helper survives our exit.
         try:
             subprocess.Popen(
                 [
                     "systemd-run",
-                    "--unit=usbip-node-update",
+                    "--unit", unit,
                     "--on-active=1s",
                     "--timer-property=AccuracySec=1us",
-                    "--setenv", env_branch,
+                    "--property=StandardOutput=append:" + str(log),
+                    "--property=StandardError=append:" + str(log),
+                    "--setenv", f"USBIP_NODE_UPDATE_BRANCH={self._probe.branch}",
                     str(script),
                 ],
                 stdout=subprocess.DEVNULL,
@@ -316,12 +323,14 @@ class Updater:
                 start_new_session=True,
             )
         except FileNotFoundError:
-            subprocess.Popen(
-                ["nohup", "bash", "-c", f"sleep 1; {env_branch} exec {script}"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            with log.open("a") as f:
+                subprocess.Popen(
+                    ["bash", "-c", f"sleep 1; exec {script}"],
+                    stdout=f,
+                    stderr=subprocess.STDOUT,
+                    start_new_session=True,
+                    env=env,
+                )
 
     def _trigger_windows_update(self) -> None:
         script = self._probe.path / "packaging" / "update.ps1"
