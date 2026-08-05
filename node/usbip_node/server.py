@@ -25,7 +25,7 @@ from .webauth import COOKIE, WebAuthStore
 # Browser paths that must stay reachable without a session so the login page can load / you can log in.
 _OPEN_PATHS = {"/health", "/api/identity", "/api/auth/status", "/api/auth/login", "/api/auth/logout"}
 # Node-to-node paths — authenticated by node identity (X-Node-Key), not the web session.
-_NODE_PREFIXES = ("/api/local/", "/api/update/")
+_NODE_PREFIXES = ("/api/local/",)
 _NODE_PATHS = {"/api/state", "/api/pair/request", "/api/pair/confirm", "/api/auth/sync"}
 
 

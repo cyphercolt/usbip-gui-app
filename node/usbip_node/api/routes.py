@@ -228,7 +228,7 @@ def build_router(
         async with httpx.AsyncClient() as client:
             results = await asyncio.gather(*[
                 peer_get_json(
-                    client, id_to_url[n.info.node_id], "/api/update/status",
+                    client, id_to_url[n.info.node_id], "/api/local/update/status",
                     cfg.node_id, cfg.node_key,
                 )
                 for n in peer_nodes
@@ -396,18 +396,33 @@ def build_router(
         return await _run_on(node_id, _local, "/api/local/autoreconnect", req.model_dump())
 
     # ---- update / fleet self-update ----
+    # Browser-facing local endpoints (no node_auth; gated by web-login middleware when enabled).
     @r.get("/api/update/status", response_model=UpdateState)
-    def _update_status(_: None = Depends(node_auth)) -> UpdateState:
+    def _update_status() -> UpdateState:
         return updater.state
 
     @r.post("/api/update/check", response_model=UpdateState)
-    async def _update_check(_: None = Depends(node_auth)) -> UpdateState:
+    async def _update_check() -> UpdateState:
         return await updater.check_now()
 
     @r.post("/api/update/start", response_model=UpdateState)
-    async def _update_start(_: None = Depends(node_auth)) -> UpdateState:
+    async def _update_start() -> UpdateState:
         return await updater.start_update()
 
+    # Node-to-node endpoints (gated by node_auth) used by the hub proxies below.
+    @r.get("/api/local/update/status", response_model=UpdateState)
+    def _local_update_status(_: None = Depends(node_auth)) -> UpdateState:
+        return updater.state
+
+    @r.post("/api/local/update/check", response_model=UpdateState)
+    async def _local_update_check(_: None = Depends(node_auth)) -> UpdateState:
+        return await updater.check_now()
+
+    @r.post("/api/local/update/start", response_model=UpdateState)
+    async def _local_update_start(_: None = Depends(node_auth)) -> UpdateState:
+        return await updater.start_update()
+
+    # Hub proxies: browser calls these, node forwards to the peer's /api/local/update/*.
     @r.get("/api/node/{node_id}/update/status", response_model=UpdateState)
     async def _node_update_status(node_id: str) -> UpdateState:
         is_self, url = await _resolve(node_id)
@@ -416,10 +431,25 @@ def build_router(
         if not url:
             raise HTTPException(status_code=404, detail="node not found")
         async with httpx.AsyncClient() as client:
-            data = await peer_get_json(client, url, "/api/update/status", cfg.node_id, cfg.node_key)
+            data = await peer_get_json(client, url, "/api/local/update/status", cfg.node_id, cfg.node_key)
         if data is None:
             raise HTTPException(status_code=502, detail="peer update status unavailable")
         return UpdateState.model_validate(data)
+
+    @r.post("/api/node/{node_id}/update/check", response_model=UpdateState)
+    async def _node_update_check(node_id: str) -> UpdateState:
+        is_self, url = await _resolve(node_id)
+        if is_self:
+            return await updater.check_now()
+        if not url:
+            raise HTTPException(status_code=404, detail="node not found")
+        async with httpx.AsyncClient() as client:
+            resp = await post_command(
+                client, url, "/api/local/update/check", {}, cfg.node_id, cfg.node_key,
+            )
+        if not resp.ok:
+            raise HTTPException(status_code=502, detail=resp.message)
+        return UpdateState.model_validate(resp.model_dump())
 
     @r.post("/api/node/{node_id}/update/start", response_model=UpdateState)
     async def _node_update_start(node_id: str) -> UpdateState:
@@ -430,7 +460,7 @@ def build_router(
             raise HTTPException(status_code=404, detail="node not found")
         async with httpx.AsyncClient() as client:
             resp = await post_command(
-                client, url, "/api/update/start", {}, cfg.node_id, cfg.node_key,
+                client, url, "/api/local/update/start", {}, cfg.node_id, cfg.node_key,
             )
         if not resp.ok:
             raise HTTPException(status_code=502, detail=resp.message)
@@ -451,7 +481,7 @@ def build_router(
         failed: list[str] = []
         async with httpx.AsyncClient() as client:
             results = await asyncio.gather(*[
-                post_command(client, url, "/api/update/start", {}, cfg.node_id, cfg.node_key)
+                post_command(client, url, "/api/local/update/start", {}, cfg.node_id, cfg.node_key)
                 for _, url in targets
             ]) if targets else []
         for (nid, _), res in zip(targets, results):
