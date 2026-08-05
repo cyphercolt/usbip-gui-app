@@ -106,6 +106,13 @@ sed -e "s/USBIP_NODE_PORT=4820/USBIP_NODE_PORT=$PORT/" \
 sed -i "s|#Environment=USBIP_NODE_UPDATE_REPO=|Environment=USBIP_NODE_UPDATE_REPO=$REPO_DIR|" "$SERVICE_FILE"
 mv "$SERVICE_FILE" /etc/systemd/system/usbip-node.service
 chmod 644 /etc/systemd/system/usbip-node.service
+# mv preserves the mktemp SELinux label (tmp_t). On SELinux-enforcing systems (Fedora
+# Atomic, e.g. Bazzite) PID 1 is then denied reading the unit and reports
+# "Unit usbip-node.service does not exist" for enable/restart. Relabel to
+# systemd_unit_file_t; restorecon is simply absent on non-SELinux distros (Pi OS).
+if command -v restorecon >/dev/null 2>&1; then
+  restorecon /etc/systemd/system/usbip-node.service
+fi
 systemctl daemon-reload
 systemctl enable usbip-node.service
 systemctl restart usbip-node.service   # restart so re-running this script also UPDATES a live node
