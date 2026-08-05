@@ -74,15 +74,21 @@ def _find_repo() -> _RepoProbe:
     env_repo = os.environ.get("USBIP_NODE_UPDATE_REPO")
     if env_repo:
         path = Path(env_repo)
-        if (path / ".git").is_dir():
-            ok, _ = _run_text(["git", "rev-parse", "--git-dir"], cwd=path)
-            if ok:
-                return _RepoProbe(path=path, branch=branch, can_update=True)
+        if not (path / ".git").is_dir():
+            return _RepoProbe(
+                path=path,
+                branch=branch,
+                can_update=False,
+                reason=f"USBIP_NODE_UPDATE_REPO ({env_repo}) has no .git directory",
+            )
+        ok, err = _run_text(["git", "rev-parse", "--git-dir"], cwd=path)
+        if ok:
+            return _RepoProbe(path=path, branch=branch, can_update=True)
         return _RepoProbe(
             path=path,
             branch=branch,
             can_update=False,
-            reason="USBIP_NODE_UPDATE_REPO is not a git checkout",
+            reason=f"USBIP_NODE_UPDATE_REPO ({env_repo}) is not a usable git checkout: {err}",
         )
 
     candidates: list[Path] = []

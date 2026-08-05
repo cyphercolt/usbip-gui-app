@@ -67,6 +67,14 @@ if [ ! -f "$REPO_DIR/web/dist/index.html" ]; then
   fi
 fi
 
+# If we are installing from a repo outside /opt/usbip-node, make sure root (the
+# service user) can run git in that directory. Git's safe.directory check blocks
+# root from touching repositories owned by other users since CVE-2022-24765.
+if [ "$REPO_DIR" != "$PREFIX" ] && [ -d "$REPO_DIR/.git" ]; then
+  echo "==> Whitelisting $REPO_DIR for root git access"
+  git config --global --add safe.directory "$REPO_DIR" 2>/dev/null || true
+fi
+
 echo "==> Installing to $PREFIX"
 mkdir -p "$PREFIX"
 python3 -m venv "$PREFIX/.venv"

@@ -127,7 +127,46 @@ async def test_start_update_refuses_when_no_repo(tmp_path, monkeypatch):
     updater.refresh_repo()
     state = await updater.start_update()
     assert not state.update_running
-    assert "not a git checkout" in state.update_message
+    assert "no .git directory" in state.update_message
+
+
+def test_find_repo_env_path_is_authoritative(tmp_path, monkeypatch):
+    """If USBIP_NODE_UPDATE_REPO points at a valid git repo, use it."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "--initial-branch=main"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True, capture_output=True)
+    (repo / "file.txt").write_text("v1")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "v1"], cwd=repo, check=True, capture_output=True)
+
+    monkeypatch.setenv("USBIP_NODE_UPDATE_REPO", str(repo))
+    probe = _find_repo()
+    assert probe.can_update
+    assert probe.path == repo
+
+
+def test_find_repo_env_path_missing_dotgit(tmp_path, monkeypatch):
+    """If USBIP_NODE_UPDATE_REPO points at a non-git directory, fail with a clear reason."""
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    monkeypatch.setenv("USBIP_NODE_UPDATE_REPO", str(plain))
+    probe = _find_repo()
+    assert not probe.can_update
+    assert "no .git directory" in probe.reason
+
+
+def test_find_repo_env_path_reports_git_error(tmp_path, monkeypatch):
+    """If .git exists but git rev-parse fails, surface the actual stderr."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    # Empty .git dir makes git complain "not a git repository".
+    monkeypatch.setenv("USBIP_NODE_UPDATE_REPO", str(repo))
+    probe = _find_repo()
+    assert not probe.can_update
+    assert "not a git repository" in probe.reason or "usable git checkout" in probe.reason
 
 
 def test_parse_commit_time_handles_iso():
