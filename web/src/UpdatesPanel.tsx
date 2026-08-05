@@ -1,7 +1,7 @@
-import { useMemo, useState } from "react";
-import { checkUpdates, startAllUpdates, startUpdate } from "./api";
+import { useEffect, useMemo, useState } from "react";
+import { checkUpdates, getUpdateLogs, startAllUpdates, startUpdate } from "./api";
 import { osBadge } from "./helpers";
-import type { NodeState } from "./types";
+import type { NodeState, UpdateLogEntry } from "./types";
 
 type Notify = (msg: string, ok: boolean) => void;
 
@@ -14,6 +14,23 @@ function formatTime(iso: string | null | undefined) {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
   return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => {});
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+  } catch {}
+  document.body.removeChild(ta);
 }
 
 function NodeUpdateRow({
@@ -94,6 +111,29 @@ function NodeUpdateRow({
   );
 }
 
+function LogRow({ entry }: { entry: UpdateLogEntry }) {
+  const ts = formatTime(entry.ts);
+  const color =
+    entry.level === "error"
+      ? "text-rose-300"
+      : entry.level === "success"
+      ? "text-emerald-300"
+      : "text-white/70";
+  const line = `[${entry.level.toUpperCase()}] ${entry.stage}: ${entry.message}`;
+  return (
+    <div className="flex items-start gap-2 py-1 text-xs font-mono">
+      <span className="text-white/30 shrink-0">{ts}</span>
+      <span className={`${color} flex-1 break-all`}>{line}</span>
+      <button
+        onClick={() => copyText(line)}
+        className="shrink-0 rounded bg-white/10 hover:bg-white/20 px-2 py-0.5 text-[10px]"
+      >
+        Copy
+      </button>
+    </div>
+  );
+}
+
 export default function UpdatesPanel({
   fleet,
   notify,
@@ -107,6 +147,8 @@ export default function UpdatesPanel({
 }) {
   const [checking, setChecking] = useState(false);
   const [updatingAll, setUpdatingAll] = useState(false);
+  const [logs, setLogs] = useState<UpdateLogEntry[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
 
   const nodes = useMemo(
     () => fleet.filter((n) => n.info.reachable && n.info.paired),
@@ -115,6 +157,19 @@ export default function UpdatesPanel({
 
   const anyAvailable = nodes.some((n) => n.update?.update_available && n.update?.can_update && !n.update?.update_running);
   const anyRunning = nodes.some((n) => n.update?.update_running);
+
+  const refreshLogs = async () => {
+    try {
+      const data = await getUpdateLogs();
+      setLogs(data);
+    } catch (e) {
+      // Don't spam; logs are best-effort.
+    }
+  };
+
+  useEffect(() => {
+    refreshLogs();
+  }, []);
 
   const doCheck = async () => {
     setChecking(true);
@@ -125,6 +180,7 @@ export default function UpdatesPanel({
       notify(String(e), false);
     }
     setChecking(false);
+    await refreshLogs();
     onChanged();
   };
 
@@ -140,6 +196,7 @@ export default function UpdatesPanel({
       notify(String(e), false);
     }
     setUpdatingAll(false);
+    await refreshLogs();
     onChanged();
   };
 
@@ -171,12 +228,43 @@ export default function UpdatesPanel({
           >
             {updatingAll ? "Starting…" : "Update all"}
           </button>
+          <button
+            onClick={() => {
+              setShowLogs((s) => !s);
+              refreshLogs();
+            }}
+            className="rounded-lg bg-white/10 hover:bg-white/15 px-3 py-2 text-sm"
+          >
+            {showLogs ? "Hide logs" : "Show logs"}
+          </button>
           {anyRunning && <span className="text-xs text-amber-300 animate-pulse">Update in progress…</span>}
         </div>
         <p className="mt-2 text-xs text-white/40">
           Each node checks its configured branch every 30 minutes. Updates restart the node service.
         </p>
       </div>
+
+      {showLogs && (
+        <div className="rounded-2xl bg-black/30 ring-1 ring-white/10 p-3 mb-4 max-h-80 overflow-auto">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-medium text-white/70">Update log</h3>
+            <button
+              onClick={() => {
+                const text = logs.map((l) => `[${l.level.toUpperCase()}] ${l.stage}: ${l.message}`).join("\n");
+                copyText(text);
+              }}
+              className="rounded bg-white/10 hover:bg-white/20 px-2 py-1 text-[11px]"
+            >
+              Copy all
+            </button>
+          </div>
+          {logs.length === 0 ? (
+            <p className="text-xs text-white/30">No log entries yet.</p>
+          ) : (
+            logs.map((entry, i) => <LogRow key={i} entry={entry} />)
+          )}
+        </div>
+      )}
 
       {nodes.length === 0 ? (
         <p className="text-sm text-white/30">No paired machines online.</p>

@@ -35,7 +35,21 @@ export default function App() {
   }, []);
 
   const copyToast = useCallback((text: string) => {
-    navigator.clipboard.writeText(text).catch(() => {});
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {});
+      return;
+    }
+    // Fallback for non-secure origins or browsers without navigator.clipboard.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand("copy");
+    } catch {}
+    document.body.removeChild(ta);
   }, []);
 
   const refresh = useCallback(() => {

@@ -6,6 +6,7 @@ import type {
   NodeState,
   SecurityState,
   SetAuthResponse,
+  UpdateLogEntry,
   UpdateState,
 } from "./types";
 
@@ -86,6 +87,12 @@ export async function startUpdate(nodeId: string): Promise<UpdateState> {
 
 export async function startAllUpdates(): Promise<CommandResponse> {
   return post("/api/update/start-all", {});
+}
+
+export async function getUpdateLogs(): Promise<UpdateLogEntry[]> {
+  const res = await fetch("/api/update/logs");
+  if (!res.ok) throw new Error(`update logs: ${res.status}`);
+  return res.json();
 }
 
 // ---- security / pairing ----

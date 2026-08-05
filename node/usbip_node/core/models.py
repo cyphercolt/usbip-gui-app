@@ -52,6 +52,17 @@ class UpdateState(BaseModel):
     rollback_tag: str | None = None
 
 
+class UpdateLogEntry(BaseModel):
+    """One line in the persistent update log for a node."""
+
+    ts: str  # ISO timestamp
+    level: str  # info, error, success
+    stage: str  # idle, fetching, pulling, installing, restarting, error
+    message: str
+    commit_before: str = ""
+    commit_after: str = ""
+
+
 class NodeState(BaseModel):
     """Everything a fleet card needs about one machine."""
 

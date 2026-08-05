@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .core.models import UpdateState
+from .core.models import UpdateLogEntry, UpdateState
 
 _DEFAULT_INTERVAL = 30 * 60  # 30 minutes
 _UPDATE_INTERVAL = float(os.environ.get("USBIP_NODE_UPDATE_CHECK_INTERVAL", _DEFAULT_INTERVAL))
@@ -153,6 +153,8 @@ class Updater:
             update_message=self._probe.reason,
         )
         self._running = False
+        self._log_path = _linux_state_path() / "update.jsonl"
+        self._log("info", "idle", f"Updater initialized; repo={self._probe.path}; can_update={self._probe.can_update}")
 
     def refresh_repo(self) -> None:
         """Re-detect the repo (used mainly in tests after env changes)."""
@@ -170,10 +172,12 @@ class Updater:
         return self._state
 
     async def check_now(self) -> UpdateState:
+        self._log("info", self._state.update_stage, "Update check started")
         if not self._probe.can_update:
             self._state = self._state.model_copy(
                 update={"last_check": _now_iso(), "update_message": self._probe.reason}
             )
+            self._log("error", "error", f"Cannot update: {self._probe.reason}")
             return self._state
 
         cwd = self._probe.path
@@ -184,6 +188,7 @@ class Updater:
             self._state = self._state.model_copy(
                 update={"can_update": False, "update_message": err, "last_check": _now_iso()}
             )
+            self._log("error", "error", f"Writable/scripts check failed: {err}")
             return self._state
 
         # Fetch first so remote refs are current.
@@ -196,6 +201,7 @@ class Updater:
                     "last_check": _now_iso(),
                 }
             )
+            self._log("error", "error", f"git fetch failed: {fetch_out}")
             return self._state
 
         installed_ok, installed = _run_text(["git", "rev-parse", "HEAD"], cwd=cwd)
@@ -215,6 +221,7 @@ class Updater:
                     "last_check": _now_iso(),
                 }
             )
+            self._log("error", "error", "git rev-parse failed")
             return self._state
 
         update_available = installed.strip() != remote.strip()
@@ -225,11 +232,13 @@ class Updater:
         )
         rollback_tag = tags_out.splitlines()[0] if tag_ok and tags_out.strip() else None
 
+        before = installed.strip()
+        after = remote.strip()
         self._state = self._state.model_copy(
             update={
-                "installed_commit": installed.strip(),
+                "installed_commit": before,
                 "installed_commit_time": _parse_commit_time(installed_time),
-                "remote_commit": remote.strip(),
+                "remote_commit": after,
                 "remote_commit_time": _parse_commit_time(remote_time),
                 "update_available": update_available,
                 "update_stage": "idle" if not self._running else self._state.update_stage,
@@ -238,6 +247,13 @@ class Updater:
                 "can_update": True,
                 "rollback_tag": rollback_tag,
             }
+        )
+        self._log(
+            "success" if not update_available else "info",
+            self._state.update_stage,
+            f"Update check complete; available={update_available}; installed={before[:7]}; remote={after[:7]}",
+            commit_before=before,
+            commit_after=after,
         )
         return self._state
 
@@ -254,17 +270,35 @@ class Updater:
                 raise
             await self.check_now()
 
+    def _log(self, level: str, stage: str, message: str, commit_before: str = "", commit_after: str = "") -> None:
+        entry = UpdateLogEntry(
+            ts=_now_iso(),
+            level=level,
+            stage=stage,
+            message=message,
+            commit_before=commit_before,
+            commit_after=commit_after,
+        )
+        try:
+            with self._log_path.open("a") as f:
+                f.write(entry.model_dump_json() + "\n")
+        except OSError:
+            pass
+
     def _set_stage(self, stage: str, message: str = "") -> None:
         self._state = self._state.model_copy(
             update={"update_stage": stage, "update_message": message}
         )
+        self._log("info" if stage != "error" else "error", stage, message)
 
     async def start_update(self) -> UpdateState:
         """Trigger the out-of-process update helper and mark state running."""
         if self._running:
+            self._log("info", self._state.update_stage, "start_update called but already running")
             return self._state
         if not self._probe.can_update:
-            self._set_stage("error", self._probe.reason or "update not available")
+            msg = self._probe.reason or "update not available"
+            self._set_stage("error", msg)
             return self._state
 
         ok, err = _check_writable_and_scripts(self._probe.path)
@@ -280,6 +314,7 @@ class Updater:
                 "update_message": "Update started",
             }
         )
+        self._log("info", "fetching", f"Update triggered; repo={self._probe.path}; branch={self._probe.branch}")
 
         if platform.system() == "Windows":
             self._trigger_windows_update()
@@ -305,6 +340,9 @@ class Updater:
             "USBIP_NODE_UPDATE_BRANCH": self._probe.branch,
             "USBIP_NODE_UPDATE_REPO": str(self._probe.path),
         }
+        cmd = f"env USBIP_NODE_UPDATE_BRANCH={self._probe.branch} USBIP_NODE_UPDATE_REPO={self._probe.path} bash {script}"
+        self._log("info", "fetching", f"Spawning update helper: {cmd}")
+
         # Use a unique unit name so repeated clicks don't collide. Start in 1s so the
         # requesting node has time to finish its HTTP response before the service restarts.
         unit = f"usbip-node-update-{int(time.time())}"
@@ -327,7 +365,9 @@ class Updater:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
+            self._log("info", "fetching", f"systemd-run timer scheduled: {unit}")
         except FileNotFoundError:
+            self._log("info", "fetching", "systemd-run not found; using nohup fallback")
             with log.open("a") as f:
                 subprocess.Popen(
                     ["bash", "-c", f"sleep 1; exec {script}"],
@@ -356,6 +396,24 @@ class Updater:
             stderr=subprocess.DEVNULL,
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         )
+
+    def logs(self, limit: int = 100) -> list[UpdateLogEntry]:
+        """Return recent update log entries newest-first."""
+        entries: list[UpdateLogEntry] = []
+        try:
+            if not self._log_path.exists():
+                return entries
+            text = self._log_path.read_text()
+        except OSError:
+            return entries
+        for line in text.strip().splitlines():
+            if not line:
+                continue
+            try:
+                entries.append(UpdateLogEntry.model_validate_json(line))
+            except ValueError:
+                continue
+        return list(reversed(entries[-limit:]))
 
 
 def _linux_state_path() -> Path:

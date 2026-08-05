@@ -74,6 +74,15 @@ export interface UpdateState {
   rollback_tag: string | null;
 }
 
+export interface UpdateLogEntry {
+  ts: string;
+  level: string;
+  stage: string;
+  message: string;
+  commit_before: string;
+  commit_after: string;
+}
+
 export interface NodeState {
   info: NodeInfo;
   shareable: Device[];
