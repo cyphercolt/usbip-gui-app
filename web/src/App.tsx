@@ -31,7 +31,11 @@ export default function App() {
   const notify = useCallback((msg: string, ok: boolean) => {
     const id = ++toastId.current;
     setToasts((t) => [...t, { id, msg, ok }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), ok ? 4000 : 12000);
+  }, []);
+
+  const copyToast = useCallback((text: string) => {
+    navigator.clipboard.writeText(text).catch(() => {});
   }, []);
 
   const refresh = useCallback(() => {
@@ -204,17 +208,24 @@ export default function App() {
       )}
 
       {/* toasts */}
-      <div className="fixed inset-x-0 bottom-4 flex flex-col items-center gap-2 px-4 pointer-events-none">
+      <div className="fixed inset-x-0 bottom-4 flex flex-col items-center gap-2 px-4 z-50">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`max-w-lg w-full rounded-xl px-4 py-2.5 text-sm shadow-lg ring-1 ${
+            className={`max-w-lg w-full rounded-xl px-4 py-2.5 text-sm shadow-lg ring-1 flex items-start gap-2 ${
               t.ok
                 ? "bg-emerald-500/15 ring-emerald-400/30 text-emerald-100"
                 : "bg-rose-500/15 ring-rose-400/30 text-rose-100"
             }`}
           >
-            {t.msg}
+            <span className="flex-1 break-words">{t.msg}</span>
+            <button
+              onClick={() => copyToast(t.msg)}
+              className="shrink-0 rounded-md bg-white/10 hover:bg-white/20 px-2 py-1 text-[11px]"
+              title="Copy"
+            >
+              Copy
+            </button>
           </div>
         ))}
       </div>

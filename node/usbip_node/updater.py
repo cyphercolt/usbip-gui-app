@@ -336,6 +336,11 @@ class Updater:
                     start_new_session=True,
                     env=env,
                 )
+        except Exception as e:
+            # If we can't even spawn the helper, mark the state as errored so the UI doesn't
+            # stay stuck on "Fetching".
+            self._running = False
+            self._set_stage("error", f"could not start update helper: {e}")
 
     def _trigger_windows_update(self) -> None:
         script = self._probe.path / "packaging" / "update.ps1"
