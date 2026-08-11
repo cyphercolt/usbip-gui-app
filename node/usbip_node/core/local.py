@@ -79,6 +79,23 @@ def list_attached() -> list[AttachedDevice]:
     return _cached("attached", usbip_linux.list_attached)
 
 
+def bound_busids() -> list[str] | None:
+    """Busids bound to this machine's USB/IP server driver, or None when unknowable on this
+    platform (Windows, demo). Peers use this to spot stale imports after we reboot; our own
+    reconcile loop uses it to free orphaned binds."""
+    if _DEMO or _IS_WINDOWS:
+        return None
+    return usbip_linux.bound_busids()
+
+
+def usbip_server_running() -> bool:
+    """Whether the USB/IP server daemon is up. A live import cannot exist without it (the
+    per-connection workers are usbipd processes too). True on platforms we can't check."""
+    if _DEMO or _IS_WINDOWS:
+        return True
+    return usbip_linux.usbipd_running()
+
+
 def _bind_effectively_ok(res: CommandResult) -> bool:
     """A bind is useful if it succeeded OR the device was already bound/shared."""
     if res.ok:

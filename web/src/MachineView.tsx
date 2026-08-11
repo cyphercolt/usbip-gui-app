@@ -18,12 +18,14 @@ interface MoveReq {
 }
 
 // Where (if anywhere) each of this machine's devices is currently attached, derived from the whole
-// fleet's attached lists (an attachment records its source host + busid).
+// fleet's attached lists (an attachment records its source host + busid). An attachment may have
+// been made via any of the source's interfaces, so match against every address it answers on.
 function sentIndex(node: NodeState, fleet: NodeState[]): Map<string, Sent> {
+  const mine = new Set([node.info.host, ...(node.info.hosts ?? [])]);
   const map = new Map<string, Sent>();
   for (const n of fleet) {
     for (const a of n.attached) {
-      if (a.remote_host === node.info.host && a.busid) {
+      if (a.remote_host && mine.has(a.remote_host) && a.busid) {
         map.set(a.busid, { destNode: n, port: a.port, description: a.description });
       }
     }

@@ -44,6 +44,19 @@ def test_state_shape(client):
     assert isinstance(body["shareable"], list)
 
 
+def test_info_reports_all_hosts(client):
+    body = client.get("/api/info").json()
+    # advertise_host must come first; the rest are whatever interfaces the test machine has
+    assert body["hosts"][0] == "10.0.0.9"
+
+
+def test_local_bound_shape(client):
+    client.post("/api/security/mode", json={"mode": "open"})
+    body = client.get("/api/local/bound").json()
+    assert isinstance(body["running"], bool)
+    assert body["busids"] is None or isinstance(body["busids"], list)
+
+
 def test_fleet_contains_self(client):
     fleet = client.get("/api/fleet").json()
     assert len(fleet) == 1

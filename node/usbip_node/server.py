@@ -81,7 +81,7 @@ def create_app(cfg: NodeConfig | None = None) -> FastAPI:
         if os.environ.get("USBIP_NODE_DISABLE_MDNS") != "1":
             await discovery.start_safe()
         tasks = [
-            asyncio.create_task(run_loop(cfg, autoreconnect, bus)),
+            asyncio.create_task(run_loop(cfg, autoreconnect, bus, peer_urls)),
             asyncio.create_task(updater.run()),
         ]
         yield

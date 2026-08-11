@@ -21,6 +21,7 @@ export interface NodeInfo {
   os_name: string;
   version: string;
   host: string;
+  hosts?: string[]; // every address the node answers on (host first); absent on older nodes
   port: number;
   reachable: boolean;
   paired: boolean;

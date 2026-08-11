@@ -29,7 +29,7 @@ from fastapi import (
 
 from .. import __version__
 from ..autoreconnect import AutoReconnectStore
-from ..config import NodeConfig
+from ..config import NodeConfig, local_addresses
 from ..core import local
 from ..core.proc import CommandResult
 from ..core.models import (
@@ -117,6 +117,7 @@ def build_router(
             os_name=cfg.os_name,
             version=__version__,
             host=cfg.advertise_host,
+            hosts=local_addresses(cfg.advertise_host),
             port=cfg.port,
             reachable=True,
             paired=True,
@@ -206,6 +207,12 @@ def build_router(
         resp = _to_response(local.detach(req.port))
         bus.publish()
         return resp
+
+    @r.get("/api/local/bound")
+    def _bound(_: None = Depends(node_auth)) -> dict:
+        """Server-side bind health, for peers reconciling stale imports after we reboot.
+        busids=None means this platform can't report it — peers must not act on that."""
+        return {"running": local.usbip_server_running(), "busids": local.bound_busids()}
 
     @r.post("/api/local/autoreconnect", response_model=CommandResponse)
     def _local_autoreconnect(req: AutoReconnectRequest, _: None = Depends(node_auth)) -> CommandResponse:
@@ -332,7 +339,16 @@ def build_router(
             # so it works even if the source flapped out of the current fleet snapshot.
             unbound = ""
             if attached and attached.remote_host and attached.busid:
-                source = next((n for n in fleet if n.info.host == attached.remote_host), None)
+                # Match by ANY of the node's addresses: the attach may have used a different
+                # interface than the one the node advertises (see _api_host above).
+                source = next(
+                    (
+                        n
+                        for n in fleet
+                        if attached.remote_host == n.info.host or attached.remote_host in n.info.hosts
+                    ),
+                    None,
+                )
                 if source is not None and source.info.node_id == cfg.node_id:
                     u = _to_response(local.unbind(attached.busid))
                 else:

@@ -151,6 +151,23 @@ def ensure_exportable(busid: str) -> CommandResult:
     )
 
 
+_SYSFS_USBIP_HOST = "/sys/bus/usb/drivers/usbip-host"
+
+
+def bound_busids() -> list[str]:
+    """Busids currently bound to the usbip-host driver.
+
+    Read straight from sysfs, so it is authoritative even for devices a client is actively
+    using (which `usbip list -r` semantics can be murky about). An empty list when the driver
+    directory is missing is correct: no driver loaded means nothing can be bound.
+    """
+    try:
+        names = os.listdir(_SYSFS_USBIP_HOST)
+    except OSError:
+        return []
+    return sorted(n for n in names if re.fullmatch(r"\d+-[\d.]+", n))
+
+
 def list_shareable() -> list[Device]:
     """Devices on this machine that can be exported (`usbip list -l`)."""
     res = _run(["usbip", "list", "-l"])

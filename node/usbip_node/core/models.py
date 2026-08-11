@@ -28,6 +28,7 @@ class NodeInfo(BaseModel):
     os_name: str
     version: str
     host: str = "127.0.0.1"  # address for usbip (port 3240) + API
+    hosts: list[str] = []  # every address this node answers on (host first); for identity matching
     port: int = 4820  # API port
     reachable: bool = True
     paired: bool = True  # in locked mode, false = discovered but not yet approved

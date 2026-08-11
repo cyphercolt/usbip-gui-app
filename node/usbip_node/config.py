@@ -10,6 +10,7 @@ import os
 import platform
 import socket
 import subprocess
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -97,6 +98,27 @@ def primary_ip() -> str:
         return socket.gethostbyname(socket.gethostname())
     except OSError:
         return "127.0.0.1"
+
+
+_addr_cache: tuple[float, list[str]] | None = None
+
+
+def local_addresses(advertise_host: str) -> list[str]:
+    """Every IPv4 address this machine answers on (advertise_host first, then the rest).
+
+    Peers may have attached via any of our interfaces (Wi-Fi vs Ethernet, tailnet, ...), and an
+    attachment records whichever address was used. Matching "is this attachment from *us*?" must
+    therefore consider all of them, not just the one we advertise. Cached briefly because
+    /api/state is polled constantly and enumeration shells out to `ip`.
+    """
+    global _addr_cache
+    now = time.monotonic()
+    if _addr_cache and _addr_cache[0] > now:
+        addrs = _addr_cache[1]
+    else:
+        addrs = [ip for _, ip in _enumerate_ipv4()]
+        _addr_cache = (now + 60.0, addrs)
+    return list(dict.fromkeys([advertise_host, *addrs]))
 
 
 def state_dir() -> Path:
