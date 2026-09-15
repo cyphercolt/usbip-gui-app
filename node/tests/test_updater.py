@@ -40,11 +40,12 @@ async def tmp_git(tmp_path, monkeypatch):
     )
     subprocess.run(["git", "push", "origin", "main"], cwd=repo, check=True, capture_output=True)
 
-    # Provide a fake packaging/update.sh so the node believes it can update.
+    # Provide fake update scripts so the node believes it can update (Windows looks for .ps1).
     packaging = repo / "packaging"
     packaging.mkdir()
     (packaging / "update.sh").write_text("#!/bin/bash\nexit 0\n")
     (packaging / "update.sh").chmod(0o755)
+    (packaging / "update.ps1").write_text("exit 0\n")
 
     monkeypatch.setenv("USBIP_NODE_UPDATE_CHECK_INTERVAL", "0")
     monkeypatch.setenv("USBIP_NODE_UPDATE_REPO", str(repo))

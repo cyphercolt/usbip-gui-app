@@ -63,6 +63,13 @@ class _FakeHost:
         return any(c[:2] == ["pkill", "-x"] for c in self.calls)
 
 
+@pytest.fixture(autouse=True)
+def linux_backend(monkeypatch):
+    # These exercise the Linux path; without this, local.bind takes the usbipd-win branch
+    # when the suite runs on Windows and shells out to the real usbipd.
+    monkeypatch.setattr(local, "_IS_WINDOWS", False)
+
+
 @pytest.fixture
 def no_sleep(monkeypatch):
     monkeypatch.setattr(usbip_linux.time, "sleep", lambda *_a, **_k: None)

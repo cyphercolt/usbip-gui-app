@@ -33,16 +33,42 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
 if (-not (Get-Command usbipd -ErrorAction SilentlyContinue)) {
     Write-Warning "usbipd-win not found. Install it to SHARE devices from this PC:  winget install usbipd"
 }
+# usbip-win2 installs to Program Files\USBip but does not add itself to PATH, and the node runs
+# `usbip` by name. Put it on the system PATH so the SYSTEM boot task can find it.
+$UsbipDir = Join-Path $env:ProgramFiles "USBip"
+if ((Test-Path "$UsbipDir\usbip.exe") -and -not (Get-Command usbip -ErrorAction SilentlyContinue)) {
+    $envKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Control\Session Manager\Environment", $true)
+    $rawPath = $envKey.GetValue("Path", "", "DoNotExpandEnvironmentNames")
+    if (($rawPath -split ";") -notcontains $UsbipDir) {
+        $envKey.SetValue("Path", ($rawPath.TrimEnd(";") + ";" + $UsbipDir), "ExpandString")
+        Write-Host "    Added $UsbipDir to the system PATH"
+    }
+    $envKey.Close()
+    $env:Path += ";$UsbipDir"
+}
 if (-not (Get-Command usbip -ErrorAction SilentlyContinue)) {
-    Write-Warning "usbip-win2 client not found. Install it to ATTACH devices to this PC:  https://github.com/vadimgrn/usbip-win2/releases"
+    Write-Warning "usbip-win2 client not found. Install it to ATTACH devices to this PC:  winget install vadimgrn.usbip-win2"
 }
 
+# Keep this file ASCII-only: Windows PowerShell 5.1 reads BOM-less scripts as ANSI, and a UTF-8
+# em dash decodes to a curly quote that breaks string parsing.
 if (-not (Test-Path "$RepoDir\web\dist\index.html")) {
-    throw "web\dist missing. It ships prebuilt on the branch — run 'git pull', or build with 'cd web; npm install; npm run build'."
+    throw "web\dist missing. It ships prebuilt on the branch - run 'git pull', or build with 'cd web; npm install; npm run build'."
 }
 
 $UpdateBranch = $env:USBIP_NODE_UPDATE_BRANCH
 if (-not $UpdateBranch) { $UpdateBranch = "main" }
+
+# A running node holds the venv's pythonw.exe open (so `venv` can't rewrite it) and would keep
+# serving the old code, since Start-ScheduledTask below is a no-op while the task is running.
+# Kill just that process rather than Stop-ScheduledTask: the in-app updater runs this script as a
+# child of the task, and stopping the task could take the updater down with it.
+$running = Get-Process pythonw -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq "$Venv\Scripts\pythonw.exe" }
+if ($running) {
+    Write-Host "==> Stopping the running node"
+    $running | Stop-Process -Force
+    $running | Wait-Process -Timeout 15 -ErrorAction SilentlyContinue
+}
 
 Write-Host "==> Creating Python venv + installing usbip-node"
 python -m venv $Venv
@@ -52,6 +78,16 @@ python -m venv $Venv
 
 Write-Host "==> Copying updater"
 Copy-Item "$RepoDir\packaging\update.ps1" "$RepoDir\update.ps1" -Force | Out-Null
+
+# The updater runs git as SYSTEM, which refuses a checkout owned by another user ("detected
+# dubious ownership"). Trust this one repo system-wide so in-app updates work.
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    $SafeDir = $RepoDir -replace '\\', '/'
+    if (-not (git config --system --get-all safe.directory | Where-Object { $_ -eq $SafeDir })) {
+        Write-Host "==> Trusting $SafeDir for git (updater runs as SYSTEM)"
+        git config --system --add safe.directory $SafeDir
+    }
+}
 
 Write-Host "==> Opening firewall port $Port"
 if (-not (Get-NetFirewallRule -DisplayName "usbip-node" -ErrorAction SilentlyContinue)) {
