@@ -51,14 +51,27 @@ if [ -f /run/ostree-booted ]; then
   echo "    rpm-ostree/Atomic system detected — skipping package install"
 elif command -v apt-get >/dev/null 2>&1; then
   apt-get update -qq
-  apt-get install -y usbip python3-venv python3-pip >/dev/null
+  apt-get install -y python3-venv python3-pip >/dev/null
+  # Debian/Raspberry Pi OS ship a real 'usbip' package. Ubuntu does not: there 'usbip' is a
+  # virtual package with no installation candidate, and the binary lives in
+  # linux-tools-<running kernel> (with a /usr/bin/usbip wrapper from linux-tools-common).
+  # A plain 'apt-get install usbip' exits 100 on Ubuntu and used to abort this whole script.
+  if apt-cache policy usbip 2>/dev/null | grep -q 'Candidate: [^(]'; then
+    apt-get install -y usbip >/dev/null
+  elif ! usbip version >/dev/null 2>&1; then
+    echo "    'usbip' has no apt candidate; installing linux-tools for kernel $(uname -r)"
+    apt-get install -y "linux-tools-$(uname -r)" linux-tools-generic >/dev/null \
+      || echo "!! Could not install linux-tools-$(uname -r); install usbip manually" >&2
+  fi
 elif command -v dnf >/dev/null 2>&1; then
   dnf install -y usbip python3 python3-pip >/dev/null || dnf install -y kernel-modules-extra usbip >/dev/null || true
 else
   echo "!! Unknown package manager — install 'usbip' and python3-venv yourself, then re-run." >&2
 fi
-if ! command -v usbip >/dev/null 2>&1; then
-  echo "!! WARNING: 'usbip' not found in PATH — bind/attach will not work until it is installed" >&2
+# 'usbip version' rather than 'command -v': on Ubuntu /usr/bin/usbip is a wrapper that only
+# works once linux-tools for the *running* kernel is installed.
+if ! usbip version >/dev/null 2>&1; then
+  echo "!! WARNING: 'usbip' not working — bind/attach will not work until it is installed" >&2
 fi
 
 echo "==> Enabling USB/IP kernel modules"
